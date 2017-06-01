@@ -1,0 +1,29 @@
+{
+  "name": "node-beagle-boot",
+  "version": "0.0.1",
+  "description": "A bootloader server for BeagleBone hardware to boot it into mass storage mode",
+  "main": "main.js",
+  "dependencies": {
+    "usb": "1.2.0",
+    "binary-parser": "1.1.5"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ravikp7/node-beagle-boot.git"
+  },
+  "keywords": [
+    "beaglebone",
+    "bootp",
+    "rndis",
+    "usb"
+  ],
+  "author": "Ravi Kumar Prasad",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ravikp7/node-beagle-boot/issues"
+  },
+  "homepage": "https://github.com/ravikp7/node-beagle-boot#readme"
+}
