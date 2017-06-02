@@ -7,6 +7,7 @@ const SPLVID = 0x0525;
 const SPLPID = 0xA4A2;
 const ETHIPP = 0x0800;
 const ETHARPP = 0x0806;
+const MAXBUF = 450;
 
 // Size of all packets
 var rndisSize = 44;
@@ -41,12 +42,18 @@ var inEndpoint = interface.endpoint(0x81);
 var outEndpoint = interface.endpoint(0x02);
 
 // Receive BOOTP
+var bootp_buf = Buffer.alloc(MAXBUF-rndisSize);
 inEndpoint.timeout = 1000;
-inEndpoint.transfer(450, onFirstIn);
+inEndpoint.transfer(MAXBUF, onFirstIn);
 function onFirstIn(error, data) {
-        console.log(error);
-        console.log(data);
-
+        //console.log(error);
+        //console.log(data);
+        data.copy(bootp_buf, 0, rndisSize, MAXBUF);
+        console.log(bootp_buf);
+        console.log(protocols.decode_ether(bootp_buf));
 }
+
+var ether = protocols.decode_ether(bootp_buf);  // This doesn't get data currently as above function is async
+console.log(ether);
 
 var rndis = protocols.make_rndis(fullSize-rndisSize);
