@@ -5,7 +5,8 @@
   "main": "main.js",
   "dependencies": {
     "usb": "1.2.0",
-    "binary-parser": "1.1.5"
+    "binary-parser": "1.1.5",
+    "schemapack": "1.4.2"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

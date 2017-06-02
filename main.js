@@ -21,6 +21,7 @@ var fullSize = 386;
 
 // Include modules
 var usb = require('usb');
+var protocols = require('./src/protocols');
 
 
 // Connect to BeagleBone
@@ -48,3 +49,4 @@ function onFirstIn(error, data) {
 
 }
 
+var rndis = protocols.make_rndis(fullSize-rndisSize);
