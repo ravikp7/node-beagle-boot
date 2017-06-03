@@ -23,6 +23,7 @@ var fullSize = 386;
 // Include modules
 var usb = require('usb');
 var protocols = require('./src/protocols');
+var deasync = require('deasync');
 
 
 // Connect to BeagleBone
@@ -42,18 +43,16 @@ var inEndpoint = interface.endpoint(0x81);
 var outEndpoint = interface.endpoint(0x02);
 
 // Receive BOOTP
-var bootp_buf = Buffer.alloc(MAXBUF-rndisSize);
-inEndpoint.timeout = 1000;
-inEndpoint.transfer(MAXBUF, onFirstIn);
-function onFirstIn(error, data) {
-        //console.log(error);
-        //console.log(data);
+var bootp_buf = Buffer.alloc(MAXBUF-rndisSize);     // Buffer for InEnd transfer
+inEndpoint.timeout = 1000;                          
+inEndpoint.transfer(MAXBUF, onFirstIn);             // InEnd transfer
+var done = false;                                   // Boolean for sync function
+function onFirstIn(error, data) {                   // Callback for InEnd transfer
         data.copy(bootp_buf, 0, rndisSize, MAXBUF);
-        console.log(bootp_buf);
-        console.log(protocols.decode_ether(bootp_buf));
+        done = true;
 }
+deasync.loopWhile(function(){return !done;});       // Synchronize InEnd transfer function
 
-var ether = protocols.decode_ether(bootp_buf);  // This doesn't get data currently as above function is async
-console.log(ether);
+var ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
 
 var rndis = protocols.make_rndis(fullSize-rndisSize);
