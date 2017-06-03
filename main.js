@@ -8,6 +8,7 @@ const SPLPID = 0xA4A2;
 const ETHIPP = 0x0800;
 const ETHARPP = 0x0806;
 const MAXBUF = 450;
+const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
 
 // Size of all packets
 var rndisSize = 44;
@@ -55,4 +56,7 @@ deasync.loopWhile(function(){return !done;});       // Synchronize InEnd transfe
 
 var ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
 
-var rndis = protocols.make_rndis(fullSize-rndisSize);
+var rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
+
+var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr);
+

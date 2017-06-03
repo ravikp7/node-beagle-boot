@@ -80,6 +80,20 @@ function make_rndis(data_length){
 }
 
 
+// Function for ether2 data packet
+function make_ether2(dest, source){
+    var eth = [
+        { h_dest: dest},
+        { h_source: source},
+        { h_proto: 0x0008}
+    ];
+    var buf = ethhdr_e.encode(eth);
+    var data = Buffer.alloc(buf.length-1,0,'hex');
+    buf.copy(data, 0, 0, buf.length-1);
+    return data;
+}
+
+
 
 
 
@@ -96,3 +110,4 @@ function decode_ether(buf){
 
 exports.make_rndis = make_rndis;
 exports.decode_ether = decode_ether;
+exports.make_ether2 = make_ether2;
