@@ -102,7 +102,7 @@ function make_rndis(data_length){
     var buf1 = fix_buff(rndis_1.encode(rndis1));
     var buf2 = fix_buff(rndis_2.encode(rndis2));
     var data = Buffer.concat([buf1, buf2], 44);
-    return toggle(data, 32);
+    return toggle(data, 32);    // convert byte order to little endian
 }
 
 
