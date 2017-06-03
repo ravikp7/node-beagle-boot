@@ -30,6 +30,23 @@ var ethhdr_e = sp.build([
     { pad: 'string' }              // Padding to shift extra bit to last for Schemapack
 ]);
 
+// ipv4 header in two parts for encoding
+var iphdr1 = sp.build([
+    { ver_hl: 'uint8'},            // version and header length each of 4 bits
+    { tos: 'uint8'},               // Type of service
+    { tot_len: 'uint16'},          // Total length of IP datagram
+    { id: 'uint16'},               // Identfication
+    { frag_off: 'uint16'},         // Flag and Fragment offset
+    { ttl: 'uint8'},               // Time to live
+    { protocol: 'uint8'},          // Protocol UDP/IP here
+    { check: 'uint16'},            // Checksum for IP header
+    { pad: 'string'}               // Padding to shift extra bit to last for Schemapack
+    ]);
+var iphdr2 = sp.build([
+    { saddr: {0:'uint8',1:'uint8',2:'uint8',3:'uint8'} },   // Source IP address (Server)
+    { daddr: {0:'uint8',1:'uint8',2:'uint8',3:'uint8'} },   // Destination IP address (BB)
+    { pad: 'string'}
+]); 
 
 
 
@@ -94,7 +111,27 @@ function make_ether2(dest, source){
 }
 
 
-
+// Function for ipv4 header packet
+function make_ipv4(src_addr, dst_addr, proto, id_, total_len){
+    var ip1 = [
+        { ver_hl: 69},
+        { tos: 0},
+        { tot_len: total_len},
+        { id: id_},
+        { frag_off: 0},
+        { ttl: 64},
+        { protocol: proto},
+        { check: 0xF648}
+    ];
+    var ip2 = [
+        { saddr: src_addr},
+        { daddr: dst_addr}
+    ];
+    var buf1 = fix_buff(iphdr1.encode(ip1));
+    var buf2 = fix_buff(iphdr2.encode(ip2));
+    var data = Buffer.concat([buf1, buf2], 20);
+    return data;
+}
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -108,6 +145,17 @@ function decode_ether(buf){
 
 
 
+
+
+///////////////////////////////////////// Function to remove extra byte from last /////////////////////////////////
+function fix_buff(buf){
+    var buf_fix = Buffer.alloc(buf.length-1,0,'hex');
+    buf.copy(buf_fix, 0, 0, buf.length-1);
+    return buf_fix;
+}
+
+
 exports.make_rndis = make_rndis;
 exports.decode_ether = decode_ether;
 exports.make_ether2 = make_ether2;
+exports.make_ipv4 = make_ipv4;

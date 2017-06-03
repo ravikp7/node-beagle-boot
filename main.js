@@ -9,6 +9,8 @@ const ETHIPP = 0x0800;
 const ETHARPP = 0x0806;
 const MAXBUF = 450;
 const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
+const server_ip = [0xc0, 0xa8, 0x01, 0x09];     // 192.168.1.9
+const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
 
 // Size of all packets
 var rndisSize = 44;
@@ -58,5 +60,7 @@ var ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet
 
 var rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
 
-var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr);
+var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr);    // Make ether2
+
+var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize); // Make ipv4
 
