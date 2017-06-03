@@ -104,9 +104,7 @@ function make_ether2(dest, source){
         { h_source: source},
         { h_proto: 0x0008}
     ];
-    var buf = ethhdr_e.encode(eth);
-    var data = Buffer.alloc(buf.length-1,0,'hex');
-    buf.copy(data, 0, 0, buf.length-1);
+    var data = fix_buff(ethhdr_e.encode(eth));
     return data;
 }
 
