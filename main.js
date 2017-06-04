@@ -64,3 +64,4 @@ var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr);    // Make ethe
 
 var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize); // Make ipv4
 
+var udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp

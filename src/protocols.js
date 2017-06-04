@@ -53,6 +53,14 @@ var iphdr2 = sp.build([
     { pad: 'string'}
 ]); 
 
+// UDP Packet for encoding
+var udp_e = sp.build([
+    { udpSrc: 'uint16'},            // Server UDP port
+    { udpDst: 'uint16'},            // BB UDP port
+    { udpLen: 'uint16'},            // UDP data length + UDP header length
+    { chkSum: 'uint16'},            // Checksum
+    { pad: 'string'}
+])
 
 
 
@@ -141,6 +149,17 @@ function make_ipv4(src_addr, dst_addr, proto, id_, total_len){
 }
 
 
+// Function for UDP packet
+function make_udp(udpData_len, srcPort, dstPort){
+    var udp = [
+        { udpSrc: srcPort},         
+        { udpDst: dstPort},         
+        { udpLen: udpData_len+8},       
+        { chkSum: 0}                
+    ];
+    return fix_buff(udp_e.encode(udp));
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////// Packet decode functions ///////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -166,3 +185,4 @@ exports.make_rndis = make_rndis;
 exports.decode_ether = decode_ether;
 exports.make_ether2 = make_ether2;
 exports.make_ipv4 = make_ipv4;
+exports.make_udp = make_udp;
