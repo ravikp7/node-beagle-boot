@@ -48,9 +48,13 @@ interface.claim();
 var inEndpoint = interface.endpoint(0x81);
 var outEndpoint = interface.endpoint(0x02);
 
+// Set endpoint transfer type
+inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+
 // Receive BOOTP
 var bootp_buf = Buffer.alloc(MAXBUF-rndisSize);     // Buffer for InEnd transfer
-inEndpoint.timeout = 1000;                          
+inEndpoint.timeout = 0;                          
 inEndpoint.transfer(MAXBUF, onFirstIn);             // InEnd transfer
 var done = false;                                   // Boolean for sync function
 function onFirstIn(error, data) {                   // Callback for InEnd transfer
