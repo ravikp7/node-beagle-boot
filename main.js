@@ -74,3 +74,14 @@ var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + boot
 var udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
 
 var bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
+
+var data = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
+
+// Send BOOT reply
+outEndpoint.timeout = 0;
+done = false;                                           
+outEndpoint.transfer(data, function(error){
+    console.log(error);
+    done = true;
+});
+deasync.loopWhile(function(){return !done;});           // Synchronize OutEnd transfer
