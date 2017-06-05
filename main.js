@@ -67,7 +67,7 @@ var ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet
 
 var rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
 
-var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr);    // Make ether2
+var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
 
 var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize); // Make ipv4
 
@@ -97,3 +97,21 @@ inEndpoint.transfer(MAXBUF, function(error, data){
 deasync.loopWhile(function(){ return !done;});
 
 var receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
+
+// ARP response
+var arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
+
+rndis = protocols.make_rndis(etherSize + arp_Size);
+
+eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
+
+data = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
+
+// Send ARP response
+outEndpoint.timeout = 0;
+done = false;                                           
+outEndpoint.transfer(data, function(error){
+    console.log(error);
+    done = true;
+});
+deasync.loopWhile(function(){return !done;});
