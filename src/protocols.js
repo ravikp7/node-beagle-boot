@@ -90,12 +90,15 @@ var bootp_bootfile = sp.build([
     { bootfile: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8'}},   // Name of File to boot
     { pad: 'string'}
 ]);
-var bootp_vendor = sp.build([       // Vendor extensions (Subnet here for this project)
-    { vendor: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8', 5:'uint8', 6:'uint8', 7:'uint8', 8:'uint8',
-        9:'uint8', 10:'uint8', 11:'uint8', 12:'uint8', 13:'uint8', 14:'uint8', 15:'uint8', 16:'uint8'}},
+// Max array size supported is 9, splitting vendor field in two parts
+var bootp_vendor1 = sp.build([       // Vendor extensions (Subnet here for this project)
+    { vendor1: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8', 5:'uint8', 6:'uint8', 7:'uint8', 8:'uint8'}},
     { pad: 'string'}
 ]);
-
+var bootp_vendor2 = sp.build([       
+    { vendor2: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8', 5:'uint8', 6:'uint8', 7:'uint8'}},
+    { pad: 'string'}
+]);
 
 
 
@@ -115,7 +118,29 @@ var ethhdr = new Parser()
     })
     .int16be('h_proto'); 
 
-
+// ARP header
+var arphdr = new Parser()
+    .uint16be('htype')
+    .uint16be('ptype')
+    .uint8('hlen')
+    .uint8('plen')
+    .uint16be('opcode')
+    .array('hw_source',{
+        type: 'uint8',
+        length: 6
+    })
+    .array('ip_source',{
+        type: 'uint8',
+        length: 4
+    })
+    .array('hw_dest',{
+        type: 'uint8',
+        length: 6
+    })
+    .array('ip_dest',{
+        type: 'uint8',
+        length: 4
+    });
 
 
 
@@ -154,7 +179,7 @@ function make_ether2(dest, source){
     var eth = [
         { h_dest: dest},
         { h_source: source},
-        { h_proto: 0x0008}
+        { h_proto: 0x0800}
     ];
     var data = fix_buff(ethhdr_e.encode(eth));
     return data;
@@ -216,7 +241,8 @@ function make_bootp(server_name, file_name, xid_, hw_dest, BB_ip, serverIP){
     ];
     var servername = [ { servername: server_name} ];
     var bootfile = [ { bootfile: file_name} ];
-    var vendor = [ { vendor: [ 99, 130, 83, 99, 1, 4, 255, 255, 255, 0, 3, 4, 192, 168, 1, 9, 0xFF] } ];
+    var vendor1 = [ { vendor1: [ 99, 130, 83, 99, 1, 4, 255, 255, 255] } ];
+    var vendor2 = [ { vendor2: [ 0, 3, 4, 192, 168, 1, 9, 0xFF] } ];
     var buf1 = fix_buff(bootp1.encode(bootp_1));
     var buf2 = fix_buff(bootp2.encode(bootp_2));
     var buf2_ = Buffer.alloc(10);           // Remaining 10 bytes out of 16 of hwaddr
@@ -224,9 +250,10 @@ function make_bootp(server_name, file_name, xid_, hw_dest, BB_ip, serverIP){
     var buf3_ = Buffer.alloc(54);           // Remaining 54 bytes out of 64 of servername
     var buf4 = fix_buff(bootp_bootfile.encode(bootfile));
     var buf4_ = Buffer.alloc(123);          // Remaining 123 bytes out of 128 of bootfile
-    var buf5 = fix_buff(bootp_vendor.encode(vendor));
-    var buf5_ = Buffer.alloc(47);           // Remaining 47 bytes out of 64 of vendor
-    return Buffer.concat([buf1, buf2, buf2_, buf3, buf3_, buf4, buf4_, buf5, buf5_], 300);
+    var buf5 = fix_buff(bootp_vendor1.encode(vendor1));
+    var buf5_ = fix_buff(bootp_vendor2.encode(vendor2));
+    var buf5__ = Buffer.alloc(47);           // Remaining 47 bytes out of 64 of vendor
+    return Buffer.concat([buf1, buf2, buf2_, buf3, buf3_, buf4, buf4_, buf5, buf5_, buf5__], 300);
 
 }
 
@@ -242,7 +269,10 @@ function decode_ether(buf){
     return ethhdr.parse(buf);
 }
 
-
+// Parse ARP header
+function parse_arp(buf){
+    return arphdr.parse(buf);
+}
 
 
 
@@ -260,3 +290,4 @@ exports.make_ether2 = make_ether2;
 exports.make_ipv4 = make_ipv4;
 exports.make_udp = make_udp;
 exports.make_bootp = make_bootp;
+exports.parse_arp = parse_arp;

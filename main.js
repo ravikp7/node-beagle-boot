@@ -12,7 +12,7 @@ const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
 const server_ip = [0xc0, 0xa8, 0x01, 0x09];     // 192.168.1.9
 const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
 const servername = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84];       // ASCII ['B','E','A','G','L','E','B','O','O','T']
-const file_spl = [42, 83, 80, 76, 43];                             // ASCII ['*','S','P','L','*']
+const file_spl = [83, 80, 76, 0, 0];                             // ASCII ['S','P','L']
 const file_uboot = [85, 66, 79, 79, 84];                           // ASCII ['U','B','O','O','T']
 
 // Size of all packets
@@ -85,3 +85,15 @@ outEndpoint.transfer(data, function(error){
     done = true;
 });
 deasync.loopWhile(function(){return !done;});           // Synchronize OutEnd transfer
+
+// Receive ARP request
+var arp_buf = Buffer.alloc(arp_Size);
+inEndpoint.timeout = 0;
+done = false;
+inEndpoint.transfer(MAXBUF, function(error, data){
+    data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
+    done = true;
+});
+deasync.loopWhile(function(){ return !done;});
+
+var receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
