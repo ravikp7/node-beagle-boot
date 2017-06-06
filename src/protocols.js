@@ -116,6 +116,13 @@ var arphdr_e = sp.build([
 ])
 
 
+// TFTP packet
+var tftp = sp.build([
+    { opcode: 'uint16'},                    // Operation code, here 3 for read/write next block of data
+    { blk_number: 'uint16'},                // Block number
+    { pad: 'string'}
+]);
+
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -294,7 +301,18 @@ function make_arp(opcode, hw_source, ip_source, hw_dest, ip_dest){
         { ip_dest: ip_dest}
     ];
     return fix_buff(arphdr_e.encode(arp));
+} 
+
+
+// Function for TFTP packet
+function make_tftp(opcode, blk_number){
+    var tftp_data = [
+        { opcode: opcode},
+        { blk_number: blk_number}
+    ];
+    return fix_buff(tftp.encode(tftp_data));
 }
+
 
 
 
