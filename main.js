@@ -115,3 +115,15 @@ outEndpoint.transfer(data, function(error){
     done = true;
 });
 deasync.loopWhile(function(){return !done;});
+
+// Receive SPL TFTP request
+var udpSPL_buf = Buffer.alloc(udpSize);
+inEndpoint.timeout = 0;
+done = false;
+inEndpoint.transfer(MAXBUF, function(error, data){
+    data.copy(udpSPL_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
+    done = true;
+});
+deasync.loopWhile(function(){ return !done;});
+
+var udpSPL = protocols.parse_udp(udpSPL_buf);           // UDP packet for SPL tftp

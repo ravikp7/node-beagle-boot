@@ -158,6 +158,12 @@ var arphdr = new Parser()
         length: 4
     });
 
+// UDP packet
+var udp = new Parser()
+    .uint16be('udpSrc')
+    .uint16be('udpDest')
+    .uint16be('udpLen')
+    .uint16be('chkSum');
 
 
 
@@ -306,6 +312,10 @@ function parse_arp(buf){
     return arphdr.parse(buf);
 }
 
+// Parse udp packet
+function parse_udp(buf){
+    return udp.parse(buf);
+}
 
 
 ///////////////////////////////////////// Function to remove extra byte from last /////////////////////////////////
@@ -324,3 +334,4 @@ exports.make_udp = make_udp;
 exports.make_bootp = make_bootp;
 exports.parse_arp = parse_arp;
 exports.make_arp = make_arp;
+exports.parse_udp = parse_udp;
