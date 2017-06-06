@@ -216,7 +216,7 @@ function make_ether2(dest, source, proto){
 
 
 // Function for ipv4 header packet
-function make_ipv4(src_addr, dst_addr, proto, id_, total_len){
+function make_ipv4(src_addr, dst_addr, proto, id_, total_len, chksum){
     var ip1 = [
         { ver_hl: 69},
         { tos: 0},
@@ -225,7 +225,7 @@ function make_ipv4(src_addr, dst_addr, proto, id_, total_len){
         { frag_off: 0},
         { ttl: 64},
         { protocol: proto},
-        { check: 0xF648}
+        { check: chksum}
     ];
     var ip2 = [
         { saddr: src_addr},
@@ -234,6 +234,30 @@ function make_ipv4(src_addr, dst_addr, proto, id_, total_len){
     var buf1 = fix_buff(iphdr1.encode(ip1));
     var buf2 = fix_buff(iphdr2.encode(ip2));
     var data = Buffer.concat([buf1, buf2], 20);
+
+    // Calculating Checksum and adding it in packet
+    if (!chksum){
+        var ip = new Parser()           // Parsing packet data as array of 2 byte words
+        .array('data', {
+            type: 'uint16be',
+            length: 10
+        });
+    var ip_packet = ip.parse(data);
+    // Checksum calculation
+    var i = 0;
+    var sum = 0;
+    while (i<10){
+        sum += ip_packet.data[i++];
+        var a = sum.toString(16);
+        if (a.length > 4){
+           sum = parseInt(a[1]+a[2]+a[3]+a[4], 16) + 1; 
+        }
+    }
+    var a = (~sum >>> 0).toString(16);          // Invert bitwise and unsign the number
+    sum = parseInt(a[4]+a[5]+a[6]+a[7], 16);    // Taking 2 bytes out of the inverted bytes
+    data = make_ipv4(src_addr, dst_addr, proto, id_, total_len, sum);   // Making packet again with checksum
+    }
+
     return data;
 }
 
