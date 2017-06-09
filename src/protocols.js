@@ -377,3 +377,4 @@ exports.make_bootp = make_bootp;
 exports.parse_arp = parse_arp;
 exports.make_arp = make_arp;
 exports.parse_udp = parse_udp;
+exports.make_tftp = make_tftp;

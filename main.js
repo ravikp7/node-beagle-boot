@@ -30,6 +30,7 @@ var fullSize = 386;
 var usb = require('usb');
 var protocols = require('./src/protocols');
 var deasync = require('deasync');
+var fs = require('fs');
 
 
 // Connect to BeagleBone
@@ -126,4 +127,50 @@ inEndpoint.transfer(MAXBUF, function(error, data){
 });
 deasync.loopWhile(function(){ return !done;});
 
-var udpSPL = protocols.parse_udp(udpSPL_buf);           // UDP packet for SPL tftp
+var udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////// SPL File Transfer ////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+var spl = fs.readFileSync("./bin/spl");
+var blocks = Math.ceil(spl.length/512);         // Total number of blocks of file
+
+eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    
+
+var start = 0;                                  // Source start for copy
+
+for(var i=1; i<=blocks; i++){                   // i is block number
+    
+    var blk_size = (i==blocks)? spl.length - (blocks-1)*512 : 512;  // Different block size for last block
+
+    var blk_data = Buffer.alloc(blk_size);
+    spl.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
+    start += blk_size; 
+
+    rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
+    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
+    udp = protocols.make_udp(tftpSize + blk_size, udpSPL.udpDest, udpSPL.udpSrc);
+    tftp = protocols.make_tftp(3, i);
+
+    var spl_data = Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
+
+    // Send SPL file data
+    outEndpoint.timeout = 0;
+    done = false;                                           
+    outEndpoint.transfer(spl_data, function(error){
+    console.log(error);
+    done = true;
+    });
+    deasync.loopWhile(function(){return !done;});
+
+    // Receive buffer back
+    inEndpoint.timeout = 0;
+    done = false;
+    inEndpoint.transfer(MAXBUF, function(error, data){
+    done = true;
+    });
+    deasync.loopWhile(function(){ return !done;});
+}
