@@ -174,3 +174,48 @@ for(var i=1; i<=blocks; i++){                   // i is block number
     });
     deasync.loopWhile(function(){ return !done;});
 }
+
+
+
+// Wait for SPL initialization
+function sleep(milliseconds) {
+  var start = new Date().getTime();
+  for (var i = 0; i < 1e7; i++) {
+    if ((new Date().getTime() - start) > milliseconds){
+      break;
+    }
+  }
+}
+sleep(2000);
+
+
+
+// Connect to BeagleBone via SPL
+device = usb.findByIds(SPLVID, SPLPID);
+device.open();
+interface = device.interface(1);    
+
+// Detach Kernel Driver
+if(interface.isKernelDriverActive()){
+    interface.detachKernelDriver();
+}
+
+interface.claim();                      
+console.log("SPL started running");
+
+// Set endpoints for usb transfer
+inEndpoint = interface.endpoint(0x81);
+outEndpoint = interface.endpoint(0x01);
+
+// Set endpoint transfer type
+inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+
+// Receive BOOTP
+inEndpoint.timeout = 0;
+var done = false;                            
+inEndpoint.transfer(MAXBUF, function (error, data) {        
+        data.copy(bootp_buf, 0, 0, MAXBUF);
+        done = true;
+});             
+deasync.loopWhile(function(){return !done;});      
