@@ -212,10 +212,33 @@ inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 
 // Receive BOOTP
+var udpUboot_buf = Buffer.alloc(udpSize);
+var spl_bootp_buf = Buffer.alloc(bootpSize);
 inEndpoint.timeout = 0;
 var done = false;                            
-inEndpoint.transfer(MAXBUF, function (error, data) {        
-        data.copy(bootp_buf, 0, 0, MAXBUF);
+inEndpoint.transfer(MAXBUF, function (error, data) { 
+        data.copy(udpUboot_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);       
+        data.copy(spl_bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);
         done = true;
 });             
-deasync.loopWhile(function(){return !done;});      
+deasync.loopWhile(function(){return !done;});    
+
+var udpUboot = protocols.parse_udp(udpUboot_buf);       // parsed udp header
+var spl_bootp = protocols.parse_bootp(spl_bootp_buf);   // parsed bootp header
+
+rndis = protocols.make_rndis(rndisSize);
+eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
+ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
+udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
+bootreply = protocols.make_bootp(servername, file_uboot, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
+
+data = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
+
+// Send BOOT reply
+outEndpoint.timeout = 0;
+done = false;                                           
+outEndpoint.transfer(data, function(error){
+    console.log(error);
+    done = true;
+});
+deasync.loopWhile(function(){return !done;});   
