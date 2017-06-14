@@ -15,5 +15,19 @@ The tool works as:
 2. Utilizing the ums feature of u-boot, booting the BB hardware into USB mass storage mode. 
 3. Flashing the BB hardware with etcher.io like tool
 
+#### Installation steps:
+1. Clone this repo and cd into it.
+2. Run command to install dependencies
+```
+sudo npm install
+```
+3. Connect BB through usb by holding down S2 (boot button).
+4. Start server by running command
+```
+sudo npm start
+```
+It should now boot BB into usb mass storage mode.
+Recommended node version 7+ 
+
 
 
