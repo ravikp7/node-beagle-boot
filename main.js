@@ -284,3 +284,50 @@ deasync.loopWhile(function(){ return !done;});
 
 var udpUBOOT = protocols.parse_udp(udpUBOOT_buf);           // Received UDP packet for UBOOT tftp   
 console.log(udpUBOOT);
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////// UBOOT File Transfer ////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+var uboot = fs.readFileSync("./bin/uboot");
+blocks = Math.ceil(uboot.length/512);         // Total number of blocks of file
+
+eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    
+
+start = 0;                                  // Source start for copy
+
+for(var i=1; i<=blocks; i++){                   // i is block number
+    
+    blk_size = (i==blocks)? uboot.length - (blocks-1)*512 : 512;  // Different block size for last block
+
+    blk_data = Buffer.alloc(blk_size);
+    uboot.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
+    start += blk_size; 
+
+    rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
+    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
+    udp = protocols.make_udp(tftpSize + blk_size, udpUBOOT.udpDest, udpUBOOT.udpSrc);
+    tftp = protocols.make_tftp(3, i);
+
+    uboot_data = Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
+
+    // Send SPL file data
+    outEndpoint.timeout = 0;
+    done = false;                                           
+    outEndpoint.transfer(uboot_data, function(error){
+    console.log(error);
+    done = true;
+    });
+    deasync.loopWhile(function(){return !done;});
+
+    // Receive buffer back
+    inEndpoint.timeout = 0;
+    done = false;
+    inEndpoint.transfer(MAXBUF, function(error, data){
+    done = true;
+    });
+    deasync.loopWhile(function(){ return !done;});
+}
