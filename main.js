@@ -269,4 +269,18 @@ outEndpoint.transfer(data, function(error){
     console.log(error);
     done = true;
 });
-deasync.loopWhile(function(){return !done;});   
+deasync.loopWhile(function(){return !done;});
+
+
+// Receive UBOOT TFTP request
+var udpUBOOT_buf = Buffer.alloc(udpSize);
+inEndpoint.timeout = 0;
+done = false;
+inEndpoint.transfer(MAXBUF, function(error, data){
+    data.copy(udpUBOOT_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
+    done = true;
+});
+deasync.loopWhile(function(){ return !done;});
+
+var udpUBOOT = protocols.parse_udp(udpUBOOT_buf);           // Received UDP packet for UBOOT tftp   
+console.log(udpUBOOT);
