@@ -226,7 +226,7 @@ deasync.loopWhile(function(){return !done;});
 var udpUboot = protocols.parse_udp(udpUboot_buf);       // parsed udp header
 var spl_bootp = protocols.parse_bootp(spl_bootp_buf);   // parsed bootp header
 
-rndis = protocols.make_rndis(rndisSize);
+rndis = protocols.make_rndis(fullSize - rndisSize);
 eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
 ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
 udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
@@ -235,6 +235,34 @@ bootreply = protocols.make_bootp(servername, file_uboot, spl_bootp.xid, ether.h_
 data = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
 
 // Send BOOT reply
+outEndpoint.timeout = 0;
+done = false;                                           
+outEndpoint.transfer(data, function(error){
+    console.log(error);
+    done = true;
+});
+deasync.loopWhile(function(){return !done;});
+
+// Receive ARP request
+inEndpoint.timeout = 0;
+done = false;
+inEndpoint.transfer(MAXBUF, function(error, data){
+    //data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
+    done = true;
+});
+deasync.loopWhile(function(){ return !done;});
+
+
+// ARP response
+arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
+
+rndis = protocols.make_rndis(etherSize + arp_Size);
+
+eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
+
+data = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
+
+// Send ARP response
 outEndpoint.timeout = 0;
 done = false;                                           
 outEndpoint.transfer(data, function(error){
