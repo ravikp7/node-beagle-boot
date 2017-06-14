@@ -1,0 +1,10 @@
+sudo: required
+language: node_js
+
+node_js:
+  - "node"
+  - "7"
+
+before_install:
+  - sudo apt-get install build-essential
+  - npm install -g node-gyp
