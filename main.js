@@ -82,7 +82,6 @@ var data = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // B
 outEndpoint.timeout = 0;
 done = false;                                           
 outEndpoint.transfer(data, function(error){
-    console.log(error);
     done = true;
 });
 deasync.loopWhile(function(){return !done;});           // Synchronize OutEnd transfer
@@ -112,7 +111,6 @@ data = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Siz
 outEndpoint.timeout = 0;
 done = false;                                           
 outEndpoint.transfer(data, function(error){
-    console.log(error);
     done = true;
 });
 deasync.loopWhile(function(){return !done;});
@@ -133,7 +131,7 @@ var udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet f
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////// SPL File Transfer ////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+console.log("SPL transfer starts");
 
 var spl = fs.readFileSync("./bin/spl");
 var blocks = Math.ceil(spl.length/512);         // Total number of blocks of file
@@ -161,7 +159,6 @@ for(var i=1; i<=blocks; i++){                   // i is block number
     outEndpoint.timeout = 0;
     done = false;                                           
     outEndpoint.transfer(spl_data, function(error){
-    console.log(error);
     done = true;
     });
     deasync.loopWhile(function(){return !done;});
@@ -238,7 +235,6 @@ data = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
 outEndpoint.timeout = 0;
 done = false;                                           
 outEndpoint.transfer(data, function(error){
-    console.log(error);
     done = true;
 });
 deasync.loopWhile(function(){return !done;});
@@ -266,7 +262,6 @@ data = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Siz
 outEndpoint.timeout = 0;
 done = false;                                           
 outEndpoint.transfer(data, function(error){
-    console.log(error);
     done = true;
 });
 deasync.loopWhile(function(){return !done;});
@@ -283,14 +278,12 @@ inEndpoint.transfer(MAXBUF, function(error, data){
 deasync.loopWhile(function(){ return !done;});
 
 var udpUBOOT = protocols.parse_udp(udpUBOOT_buf);           // Received UDP packet for UBOOT tftp   
-console.log(udpUBOOT);
-
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////// UBOOT File Transfer ////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+console.log("Uboot transfer starts");
 
 var uboot = fs.readFileSync("./bin/uboot");
 blocks = Math.ceil(uboot.length/512);         // Total number of blocks of file
@@ -318,7 +311,6 @@ for(var i=1; i<=blocks; i++){                   // i is block number
     outEndpoint.timeout = 0;
     done = false;                                           
     outEndpoint.transfer(uboot_data, function(error){
-    console.log(error);
     done = true;
     });
     deasync.loopWhile(function(){return !done;});
@@ -331,3 +323,5 @@ for(var i=1; i<=blocks; i++){                   // i is block number
     });
     deasync.loopWhile(function(){ return !done;});
 }
+
+console.log("Ready for flashing in a bit..");
