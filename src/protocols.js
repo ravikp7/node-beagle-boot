@@ -172,6 +172,47 @@ var udp = new Parser()
     .uint16be('udpLen')
     .uint16be('chkSum');
 
+// BOOTP packet
+var bootp = new Parser()
+    .uint8('opcode')
+    .uint8('hw')
+    .uint8('hwlength')
+    .uint8('hopcount')
+    .uint32be('xid')
+    .uint16be('secs')
+    .uint16be('flags')
+    .array('ciaddr',{
+        type: 'uint8',
+        length: 4
+    })
+    .array('yiaddr',{
+        type: 'uint8',
+        length: 4
+    })
+    .array('server_ip',{
+        type: 'uint8',
+        length: 4
+    })
+    .array('bootp_gw_ip',{
+        type: 'uint8',
+        length: 4
+    })
+    .array('hwaddr',{
+        type: 'uint8',
+        length: 16
+    })
+    .array('servername',{
+        type: 'uint8',
+        length: 64
+    })
+    .array('bootfile',{
+        type: 'uint8',
+        length: 128
+    })
+    .array('vendor',{
+        type: 'uint8',
+        length: 64
+    });
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -359,6 +400,11 @@ function parse_udp(buf){
     return udp.parse(buf);
 }
 
+// Parse bootp packet
+function parse_bootp(buf){
+    return bootp.parse(buf);
+}
+
 
 ///////////////////////////////////////// Function to remove extra byte from last /////////////////////////////////
 function fix_buff(buf){
@@ -378,3 +424,4 @@ exports.parse_arp = parse_arp;
 exports.make_arp = make_arp;
 exports.parse_udp = parse_udp;
 exports.make_tftp = make_tftp;
+exports.parse_bootp = parse_bootp;
