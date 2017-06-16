@@ -15,9 +15,16 @@ The tool works as:
 2. Utilizing the ums feature of u-boot, booting the BB hardware into USB mass storage mode. 
 3. Flashing the BB hardware with etcher.io like tool
 
-#### Installation steps:
+## Recommended node version 6+
+
+### Installation steps:
+### Linux
+#### Ubuntu / Debian
 1. Clone this repo and cd into it.
 2. Run command to install dependencies
+```
+sudo apt-get install build-essential libudev-dev
+```
 ```
 sudo npm install
 ```
@@ -27,7 +34,36 @@ sudo npm install
 sudo npm start
 ```
 It should now boot BB into usb mass storage mode.
-Recommended node version 7+ 
 
+### Windows
+1. Clone this repo and cd into it.
+2. Connect BB through usb by holding down S2 (boot button).
+3. Install am335x usb drivers through [Zadig](http://zadig.akeo.ie/).
+4. Open Zadig, select Options -> List all devices. Select AM335x usb from list and install WinUSB driver.
+5. From admin power shell or cmd run:
+```
+npm install
+```
+```
+npm start
+```
+It should now boot BB into usb mass storage mode.
+ 
+
+### OSX
+1. Clone this repo and cd into it.
+2. Run command to install dependencies
+```
+brew install libudev-dev
+```
+```
+sudo npm install
+```
+3. Connect BB through usb by holding down S2 (boot button).
+4. Start server by running command
+```
+sudo npm start
+```
+It should now boot BB into usb mass storage mode.
 
 
