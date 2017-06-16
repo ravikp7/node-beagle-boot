@@ -32,6 +32,8 @@ var protocols = require('./src/protocols');
 var deasync = require('deasync');
 var fs = require('fs');
 
+// Set usb debug log
+usb.setDebugLevel(4);   
 
 // Connect to BeagleBone
 var device = usb.findByIds(ROMVID, ROMPID);
