@@ -31,6 +31,8 @@ var usb = require('usb');
 var protocols = require('./src/protocols');
 var deasync = require('deasync');
 var fs = require('fs');
+var os = require('os');
+var platform = os.platform();
 
 // Set usb debug log
 usb.setDebugLevel(4);   
@@ -38,14 +40,22 @@ usb.setDebugLevel(4);
 // Connect to BeagleBone
 var device = usb.findByIds(ROMVID, ROMPID);
 device.open();
-var interface = device.interface(1);    // Select interface 1
+var interface = device.interface(1);    // Select interface 1 for BULK transfers
 
+if(platform != 'win32'){                // Not supported in Windows
 // Detach Kernel Driver
 if(interface.isKernelDriverActive()){
     interface.detachKernelDriver();
 }
+}
 
-interface.claim();                      
+interface.claim();
+
+// Windows specific code to initialize RNDIS device
+if(platform = 'win32'){
+    var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
+    intf0.claim();
+}                      
 
 // Set endpoints for usb transfer
 var inEndpoint = interface.endpoint(0x81);
