@@ -32,6 +32,11 @@ var rndis_set_hdr = sp.build([
     { pad: 'string'}
 ]);
 
+// oid parameter of 4 bytes
+var oid = sp.build([
+    { oid_param: 'uint32'},
+    { pad: 'string'}
+]);
 
 
 
@@ -49,10 +54,35 @@ function make_rndis_init(){
         { minor_version: 1},
         { max_transfer_size: 64}
     ];
-
+    
     var data = fix_buff(rndis_init_hdr.encode(rndis_init));
     return toggle(data, 32);    // convert byte order to little endian
 }
+
+
+// Function for rndis_set_msg packet
+function make_rndis_set(){
+    var rndis_set = [
+        { msg_type: 5},
+        { msg_len: 28},
+        { request_id: 23},
+        { oid: 0x1010E},
+        { len: 4},
+        { offset: 20},
+        { reserved: 0}
+    ];
+
+
+    var oid_ = [
+        { oid_param: 0x1 | 0x8 | 0x4 | 0x20}
+    ];
+
+    var set_buf = fix_buff(rndis_set_hdr.encode(rndis_set));
+    var oid_p = fix_buff(oid.encode(oid_));
+    var data = Buffer.concat([set_buf, oid_p], 32);
+    return toggle(data, 32);    // convert byte order to little endian
+}
+
 
 
 
@@ -67,3 +97,4 @@ function fix_buff(buf){
 
 
 exports.make_rndis_init = make_rndis_init;
+exports.make_rndis_set = make_rndis_set;

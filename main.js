@@ -36,14 +36,17 @@ var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
 
 // Set usb debug log
-usb.setDebugLevel(4);   
+//usb.setDebugLevel(4);   
 
 // Connect to BeagleBone
 var device = usb.findByIds(ROMVID, ROMPID);
 device.open();
 var interface = device.interface(1);    // Select interface 1 for BULK transfers
 
-if(platform != 'win32'){                // Not supported in Windows
+var windows = 0;
+if(platform == 'win32') windows = 1; 
+
+if(!windows){                // Not supported in Windows
 // Detach Kernel Driver
 if(interface.isKernelDriverActive()){
     interface.detachKernelDriver();
@@ -53,12 +56,13 @@ if(interface.isKernelDriverActive()){
 interface.claim();
 
 // Windows specific code to initialize RNDIS device
-if(platform = 'win32'){
+if(windows){
     var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
     intf0.claim();
 
     var CONTROL_BUFFER_SIZE = 1025;  
     var rndis_init_size = 24;
+    var rndis_set_size = 28;
 
     var rndis_buf = Buffer.alloc(CONTROL_BUFFER_SIZE);
     var init_msg = rndis_win.make_rndis_init();
@@ -74,6 +78,20 @@ if(platform = 'win32'){
 
     // Sending rndis_init_msg (SEND_ENCAPSULATED_COMMAND)
     device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
+        console.log(error);
+    });
+
+    // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
+    device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
+        console.log(data);
+    });
+
+
+    var set_msg = rndis_win.make_rndis_set();
+    set_msg.copy(rndis_buf, 0, 0, rndis_set_size+4);
+
+    // Send rndis_set_msg (SEND_ENCAPSULATED_COMMAND)
+     device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
         console.log(error);
     });
 
@@ -210,7 +228,7 @@ for(var i=1; i<=blocks; i++){                   // i is block number
     });
     deasync.loopWhile(function(){ return !done;});
 }
-
+console.log("SPL transfer complete");
 
 
 // Wait for SPL initialization
@@ -231,9 +249,11 @@ device = usb.findByIds(SPLVID, SPLPID);
 device.open();
 interface = device.interface(1);    
 
+if(!windows){
 // Detach Kernel Driver
 if(interface.isKernelDriverActive()){
     interface.detachKernelDriver();
+}
 }
 
 interface.claim();                      
