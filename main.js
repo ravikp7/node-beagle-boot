@@ -33,6 +33,7 @@ var deasync = require('deasync');
 var fs = require('fs');
 var os = require('os');
 var platform = os.platform();
+var rndis_win = require('./src/rndis_win');
 
 // Set usb debug log
 usb.setDebugLevel(4);   
@@ -55,6 +56,32 @@ interface.claim();
 if(platform = 'win32'){
     var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
     intf0.claim();
+
+    var CONTROL_BUFFER_SIZE = 1025;  
+    var rndis_init_size = 24;
+
+    var rndis_buf = Buffer.alloc(CONTROL_BUFFER_SIZE);
+    var init_msg = rndis_win.make_rndis_init();
+    init_msg.copy(rndis_buf, 0, 0, rndis_init_size);
+
+
+    // Windows Control Transfer
+    // https://msdn.microsoft.com/en-us/library/aa447434.aspx
+    // http://www.beyondlogic.org/usbnutshell/usb6.shtml
+
+    var bmRequestType_send = 0x21; // USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
+    var bmRequestType_receive = 0xA1; // USB_DATA=DeviceToHost | USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
+
+    // Sending rndis_init_msg (SEND_ENCAPSULATED_COMMAND)
+    device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
+        console.log(error);
+    });
+
+    // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
+    device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
+        console.log(data);
+    });
+
 }                      
 
 // Set endpoints for usb transfer
