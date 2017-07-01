@@ -44,18 +44,20 @@ var inEndpoint, outEndpoint, data;
 
 // Connect to BeagleBone
 if(!usb.findByIds(ROMVID, ROMPID))
-console.log("Connect your BeagleBone by holding BOOT switch");
+console.log("Connect your BeagleBone by holding down BOOT switch");
 
 
 // Event for device initialization
-emitter.on('init',function(outEnd){
+emitter.on('init',function(file, vid, pid, outEnd){
 
     // Connect to BeagleBone
     var device;
     while(device === undefined){
-    device = usb.findByIds(ROMVID, ROMPID);
+    device = usb.findByIds(vid, pid);
     }
     
+    console.log(file+" =>");
+
     device.open();
     var interface = device.interface(1);    // Select interface 1 for BULK transfers
 
@@ -126,14 +128,14 @@ emitter.on('init',function(outEnd){
     inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
     outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 
-    emitter.emit('getBOOTP');
+    emitter.emit('getBOOTP', file);
 
 });
 
 
 
 // Event for receiving BOOTP
-emitter.on('getBOOTP', function(){
+emitter.on('getBOOTP', function(file){
 
     var bootp_buf = Buffer.alloc(MAXBUF-rndisSize);     // Buffer for InEnd transfer
 
@@ -141,45 +143,73 @@ emitter.on('getBOOTP', function(){
 
         console.log('BOOTP received');
 
-        data.copy(bootp_buf, 0, rndisSize, MAXBUF);
+        if(file == 'spl'){
 
-        ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
+            data.copy(bootp_buf, 0, rndisSize, MAXBUF);
 
-        var rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
+            ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
 
-        var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
+            var rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
 
-        var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
+            var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
 
-        var udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
+            var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
 
-        var bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
+            var udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
 
-        buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
+            var bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
 
-        emitter.emit('sendBOOTP', buff);
+            buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
+
+        }
+
+        else{
+
+            var udpUboot_buf = Buffer.alloc(udpSize);
+            
+            var spl_bootp_buf = Buffer.alloc(bootpSize);
+
+            data.copy(udpUboot_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
+
+            data.copy(spl_bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);  
+
+            var udpUboot = protocols.parse_udp(udpUboot_buf);       // parsed udp header
+
+            var spl_bootp = protocols.parse_bootp(spl_bootp_buf);   // parsed bootp header
+
+            rndis = protocols.make_rndis(fullSize - rndisSize);
+
+            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
+
+            ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
+
+            udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
+
+            bootreply = protocols.make_bootp(servername, file_uboot, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
+
+            buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
+        }
+
+        emitter.emit('sendBOOTP', file, buff);
     });
 });
 
 
 
 // Event for sending BOOTP reply
-emitter.on('sendBOOTP', function(data){
+emitter.on('sendBOOTP', function(file, data){
 
     outEndpoint.transfer(data, function(error){
         console.log("BOOTP reply done");
-        emitter.emit('getARP');
+        emitter.emit('getARP', file);
     });
 
 });
 
 
-emitter.emit('init', 0x02);
-
-
 
 // Event for receiving ARP request
-emitter.on('getARP', function(){
+emitter.on('getARP', function(file){
 
     inEndpoint.transfer(MAXBUF, function(error, data){
 
@@ -200,26 +230,26 @@ emitter.on('getARP', function(){
 
         buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
 
-        emitter.emit('sendARP', buff);
+        emitter.emit('sendARP', file, buff);
     });
 
 });
 
 // Event for sending ARP response
-emitter.on('sendARP', function(data){
+emitter.on('sendARP', function(file, data){
 
     outEndpoint.transfer(data, function(error){
 
         console.log('ARP response sent');
 
-        emitter.emit('getTFTP');
+        emitter.emit('getTFTP', file);
 
     });
 });
 
 
 // Event for receiving SPL TFTP request
-emitter.on('getTFTP', function(){
+emitter.on('getTFTP', function(file){
 
     inEndpoint.transfer(MAXBUF, function(error, data){
 
@@ -231,207 +261,58 @@ emitter.on('getTFTP', function(){
 
         console.log('TFTP request received');
 
-        done = true;
+        emitter.emit('sendFile', file);
     });
 
 });
-deasync.loopWhile(function(){return !done;});
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////// SPL File Transfer ////////////////////////////////////////////////
+///////////////////////////////////////////// File Transfer ////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
-console.log("SPL transfer starts");
+emitter.on('sendFile', function(file){
+    console.log(file+" transfer starts");
 
-var spl = fs.readFileSync("./bin/spl");
-var blocks = Math.ceil(spl.length/512);         // Total number of blocks of file
+    var spl = fs.readFileSync("./bin/"+file);
+    var blocks = Math.ceil(spl.length/512);         // Total number of blocks of file
 
-eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    
+    eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    
 
-var start = 0;                                  // Source start for copy
+    var start = 0;                                  // Source start for copy
 
-for(var i=1; i<=blocks; i++){                   // i is block number
+    for(var i=1; i<=blocks; i++){                   // i is block number
+        
+        var blk_size = (i==blocks)? spl.length - (blocks-1)*512 : 512;  // Different block size for last block
+
+        var blk_data = Buffer.alloc(blk_size);
+        spl.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
+        start += blk_size; 
+
+        rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
+        ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
+        udp = protocols.make_udp(tftpSize + blk_size, udpSPL.udpDest, udpSPL.udpSrc);
+        tftp = protocols.make_tftp(3, i);
+
+        var spl_data = Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
+
+        // Send SPL file data
+        outEndpoint.transfer(spl_data, function(error){});
+
+        // Receive buffer back
+        inEndpoint.transfer(MAXBUF, function(error, data){});
     
-    var blk_size = (i==blocks)? spl.length - (blocks-1)*512 : 512;  // Different block size for last block
-
-    var blk_data = Buffer.alloc(blk_size);
-    spl.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
-    start += blk_size; 
-
-    rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
-    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
-    udp = protocols.make_udp(tftpSize + blk_size, udpSPL.udpDest, udpSPL.udpSrc);
-    tftp = protocols.make_tftp(3, i);
-
-    var spl_data = Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
-
-    // Send SPL file data
-    outEndpoint.timeout = 0;
-    done = false;                                           
-    outEndpoint.transfer(spl_data, function(error){
-    done = true;
-    });
-    deasync.loopWhile(function(){return !done;});
-
-    // Receive buffer back
-    inEndpoint.timeout = 0;
-    done = false;
-    inEndpoint.transfer(MAXBUF, function(error, data){
-    done = true;
-    });
-    deasync.loopWhile(function(){ return !done;});
-}
-console.log("SPL transfer complete");
-
-
-// Wait for SPL initialization
-function sleep(milliseconds) {
-  var start = new Date().getTime();
-  for (var i = 0; i < 1e7; i++) {
-    if ((new Date().getTime() - start) > milliseconds){
-      break;
     }
-  }
-}
-sleep(2000);
 
+    console.log(file+" transfer complete");
 
+    if(file=='spl'){
 
-// Connect to BeagleBone via SPL
-device = usb.findByIds(SPLVID, SPLPID);
-device.open();
-interface = device.interface(1);    
+        setTimeout(function(){
+        emitter.emit('init', 'uboot', SPLVID, SPLPID, 0x01);
+        }, 2000);
+    }
 
-if(!windows){
-// Detach Kernel Driver
-if(interface.isKernelDriverActive()){
-    interface.detachKernelDriver();
-}
-}
+    else
+        console.log('Ready for Flashing in a bit..');
 
-interface.claim();                      
-console.log("SPL started running");
-
-// Set endpoints for usb transfer
-inEndpoint = interface.endpoint(0x81);
-outEndpoint = interface.endpoint(0x01);
-
-// Set endpoint transfer type
-inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-
-// Receive BOOTP
-var udpUboot_buf = Buffer.alloc(udpSize);
-var spl_bootp_buf = Buffer.alloc(bootpSize);
-inEndpoint.timeout = 0;
-var done = false;                            
-inEndpoint.transfer(MAXBUF, function (error, data) { 
-        data.copy(udpUboot_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);       
-        data.copy(spl_bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);
-        done = true;
-});             
-deasync.loopWhile(function(){return !done;});    
-
-var udpUboot = protocols.parse_udp(udpUboot_buf);       // parsed udp header
-var spl_bootp = protocols.parse_bootp(spl_bootp_buf);   // parsed bootp header
-
-rndis = protocols.make_rndis(fullSize - rndisSize);
-eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
-ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
-udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
-bootreply = protocols.make_bootp(servername, file_uboot, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
-
-data = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
-
-// Send BOOT reply
-outEndpoint.timeout = 0;
-done = false;                                           
-outEndpoint.transfer(data, function(error){
-    done = true;
 });
-deasync.loopWhile(function(){return !done;});
 
-// Receive ARP request
-inEndpoint.timeout = 0;
-done = false;
-inEndpoint.transfer(MAXBUF, function(error, data){
-    //data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
-    done = true;
-});
-deasync.loopWhile(function(){ return !done;});
-
-
-// ARP response
-arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
-
-rndis = protocols.make_rndis(etherSize + arp_Size);
-
-eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
-
-data = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
-
-// Send ARP response
-outEndpoint.timeout = 0;
-done = false;                                           
-outEndpoint.transfer(data, function(error){
-    done = true;
-});
-deasync.loopWhile(function(){return !done;});
-
-
-// Receive UBOOT TFTP request
-var udpUBOOT_buf = Buffer.alloc(udpSize);
-inEndpoint.timeout = 0;
-done = false;
-inEndpoint.transfer(MAXBUF, function(error, data){
-    data.copy(udpUBOOT_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
-    done = true;
-});
-deasync.loopWhile(function(){ return !done;});
-
-var udpUBOOT = protocols.parse_udp(udpUBOOT_buf);           // Received UDP packet for UBOOT tftp   
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////// UBOOT File Transfer ////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-console.log("Uboot transfer starts");
-
-var uboot = fs.readFileSync("./bin/uboot");
-blocks = Math.ceil(uboot.length/512);         // Total number of blocks of file
-
-eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    
-
-start = 0;                                  // Source start for copy
-
-for(var i=1; i<=blocks; i++){                   // i is block number
-    
-    blk_size = (i==blocks)? uboot.length - (blocks-1)*512 : 512;  // Different block size for last block
-
-    blk_data = Buffer.alloc(blk_size);
-    uboot.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
-    start += blk_size; 
-
-    rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
-    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
-    udp = protocols.make_udp(tftpSize + blk_size, udpUBOOT.udpDest, udpUBOOT.udpSrc);
-    tftp = protocols.make_tftp(3, i);
-
-    uboot_data = Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
-
-    // Send SPL file data
-    outEndpoint.timeout = 0;
-    done = false;                                           
-    outEndpoint.transfer(uboot_data, function(error){
-    done = true;
-    });
-    deasync.loopWhile(function(){return !done;});
-
-    // Receive buffer back
-    inEndpoint.timeout = 0;
-    done = false;
-    inEndpoint.transfer(MAXBUF, function(error, data){
-    done = true;
-    });
-    deasync.loopWhile(function(){ return !done;});
-}
-
-console.log("Ready for flashing in a bit..");
+emitter.emit('init', 'spl', ROMVID, ROMPID, 0x02);
