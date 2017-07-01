@@ -30,6 +30,8 @@ var fullSize = 386;
 var usb = require('usb');
 var protocols = require('./src/protocols');
 var deasync = require('deasync');
+var EventEmitter = require('events').EventEmitter;
+var emitter = new EventEmitter();
 var fs = require('fs');
 var os = require('os');
 var platform = os.platform();
@@ -38,8 +40,27 @@ var rndis_win = require('./src/rndis_win');
 // Set usb debug log
 //usb.setDebugLevel(4);   
 
+
+// Function for InEnd Bulk Transfer
+function inTransfer(inEndpoint, process){
+    inEndpoint.transfer(MAXBUF, (error, data) => process(data));
+}
+
+
+// Function for OutEnd Bulk Transfer
+function outTransfer(outEndpoint, data, process){
+    outEndpoint.transfer(data, (error) => process("Done"));
+}
+
+
+
 // Connect to BeagleBone
-var device = usb.findByIds(ROMVID, ROMPID);
+var device;
+console.log("Connect your BeagleBone..");
+while(device === undefined){
+device = usb.findByIds(ROMVID, ROMPID);
+}
+
 device.open();
 var interface = device.interface(1);    // Select interface 1 for BULK transfers
 
