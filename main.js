@@ -36,35 +36,70 @@ var fs = require('fs');
 var os = require('os');
 var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
-var inEndpoint, outEndpoint;
+var inEndpoint, outEndpoint, data;
 
 // Set usb debug log
 //usb.setDebugLevel(4);   
 
 
-// Function for InEnd Bulk Transfer
-function inTransfer(inEndpoint, process){
-    inEndpoint.transfer(MAXBUF, (error, data) => process(data));
-}
-
-
-// Function for OutEnd Bulk Transfer
-function outTransfer(outEndpoint, data, process){
-    outEndpoint.transfer(data, (error) => process("Done"));
-}
-
-
-
 // Connect to BeagleBone
-var device;
-console.log("Connect your BeagleBone..");
-while(device === undefined){
-device = usb.findByIds(ROMVID, ROMPID);
-}
+if(!usb.findByIds(ROMVID, ROMPID))
+console.log("Connect your BeagleBone by holding BOOT switch");
+
+
+// Event for sending BOOTP reply
+emitter.on('sendBOOTP', function(data){
+
+    outEndpoint.transfer(data, function(error){
+        console.log("BOOTP reply done");
+        done = true;
+    });
+
+});
+
+
+
+// Event for receiving BOOTP
+emitter.on('getBOOTP', function(){
+
+    var bootp_buf = Buffer.alloc(MAXBUF-rndisSize);     // Buffer for InEnd transfer
+
+    inEndpoint.transfer(MAXBUF, function(error, data){
+
+        console.log('BOOTP received');
+
+        data.copy(bootp_buf, 0, rndisSize, MAXBUF);
+
+        ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
+
+        var rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
+
+        var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
+
+        var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
+
+        var udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
+
+        var bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
+
+        buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
+
+        emitter.emit('sendBOOTP', buff);
+    });
+});
+
+
+
 
 // Event for device initialization
 emitter.on('init',function(outEnd){
 
+    // Connect to BeagleBone
+    var device;
+    while(device === undefined){
+    device = usb.findByIds(ROMVID, ROMPID);
+    }
+    
     device.open();
     var interface = device.interface(1);    // Select interface 1 for BULK transfers
 
@@ -72,10 +107,10 @@ emitter.on('init',function(outEnd){
     if(platform == 'win32') windows = 1; 
 
     if(!windows){                // Not supported in Windows
-    // Detach Kernel Driver
-    if(interface.isKernelDriverActive()){
-        interface.detachKernelDriver();
-    }
+        // Detach Kernel Driver
+        if(interface.isKernelDriverActive()){
+            interface.detachKernelDriver();
+        }
     }
 
     interface.claim();
@@ -135,42 +170,13 @@ emitter.on('init',function(outEnd){
     inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
     outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 
+    emitter.emit('getBOOTP');
+
 });
 
 emitter.emit('init', 0x02);
 
-// Receive BOOTP
-var bootp_buf = Buffer.alloc(MAXBUF-rndisSize);     // Buffer for InEnd transfer
-inEndpoint.timeout = 0;                          
-inEndpoint.transfer(MAXBUF, onFirstIn);             // InEnd transfer
-var done = false;                                   // Boolean for sync function
-function onFirstIn(error, data) {                   // Callback for InEnd transfer
-        data.copy(bootp_buf, 0, rndisSize, MAXBUF);
-        done = true;
-}
-deasync.loopWhile(function(){return !done;});       // Synchronize InEnd transfer function
-
-var ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
-
-var rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
-
-var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
-
-var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
-
-var udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
-
-var bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
-
-var data = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
-
-// Send BOOT reply
-outEndpoint.timeout = 0;
-done = false;                                           
-outEndpoint.transfer(data, function(error){
-    done = true;
-});
-deasync.loopWhile(function(){return !done;});           // Synchronize OutEnd transfer
+deasync.loopWhile(function(){return !done;}); 
 
 // Receive ARP request
 var arp_buf = Buffer.alloc(arp_Size);
