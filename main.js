@@ -29,7 +29,6 @@ var fullSize = 386;
 // Include modules
 var usb = require('usb');
 var protocols = require('./src/protocols');
-var deasync = require('deasync');
 var EventEmitter = require('events').EventEmitter;
 var emitter = new EventEmitter();
 var fs = require('fs');
