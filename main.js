@@ -47,50 +47,6 @@ if(!usb.findByIds(ROMVID, ROMPID))
 console.log("Connect your BeagleBone by holding BOOT switch");
 
 
-// Event for sending BOOTP reply
-emitter.on('sendBOOTP', function(data){
-
-    outEndpoint.transfer(data, function(error){
-        console.log("BOOTP reply done");
-        done = true;
-    });
-
-});
-
-
-
-// Event for receiving BOOTP
-emitter.on('getBOOTP', function(){
-
-    var bootp_buf = Buffer.alloc(MAXBUF-rndisSize);     // Buffer for InEnd transfer
-
-    inEndpoint.transfer(MAXBUF, function(error, data){
-
-        console.log('BOOTP received');
-
-        data.copy(bootp_buf, 0, rndisSize, MAXBUF);
-
-        ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
-
-        var rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
-
-        var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
-
-        var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
-
-        var udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
-
-        var bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
-
-        buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
-
-        emitter.emit('sendBOOTP', buff);
-    });
-});
-
-
-
-
 // Event for device initialization
 emitter.on('init',function(outEnd){
 
@@ -174,52 +130,112 @@ emitter.on('init',function(outEnd){
 
 });
 
+
+
+// Event for receiving BOOTP
+emitter.on('getBOOTP', function(){
+
+    var bootp_buf = Buffer.alloc(MAXBUF-rndisSize);     // Buffer for InEnd transfer
+
+    inEndpoint.transfer(MAXBUF, function(error, data){
+
+        console.log('BOOTP received');
+
+        data.copy(bootp_buf, 0, rndisSize, MAXBUF);
+
+        ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
+
+        var rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
+
+        var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
+
+        var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
+
+        var udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
+
+        var bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
+
+        buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
+
+        emitter.emit('sendBOOTP', buff);
+    });
+});
+
+
+
+// Event for sending BOOTP reply
+emitter.on('sendBOOTP', function(data){
+
+    outEndpoint.transfer(data, function(error){
+        console.log("BOOTP reply done");
+        emitter.emit('getARP');
+    });
+
+});
+
+
 emitter.emit('init', 0x02);
 
-deasync.loopWhile(function(){return !done;}); 
 
-// Receive ARP request
-var arp_buf = Buffer.alloc(arp_Size);
-inEndpoint.timeout = 0;
-done = false;
-inEndpoint.transfer(MAXBUF, function(error, data){
-    data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
-    done = true;
+
+// Event for receiving ARP request
+emitter.on('getARP', function(){
+
+    inEndpoint.transfer(MAXBUF, function(error, data){
+
+        console.log('ARP request received');
+
+        var arp_buf = Buffer.alloc(arp_Size);
+
+        data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
+    
+        receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
+
+        // ARP response
+        var arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
+
+        rndis = protocols.make_rndis(etherSize + arp_Size);
+
+        eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
+
+        buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
+
+        emitter.emit('sendARP', buff);
+    });
+
 });
-deasync.loopWhile(function(){ return !done;});
 
-var receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
+// Event for sending ARP response
+emitter.on('sendARP', function(data){
 
-// ARP response
-var arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
+    outEndpoint.transfer(data, function(error){
 
-rndis = protocols.make_rndis(etherSize + arp_Size);
+        console.log('ARP response sent');
 
-eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
+        emitter.emit('getTFTP');
 
-data = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
+    });
+});
 
-// Send ARP response
-outEndpoint.timeout = 0;
-done = false;                                           
-outEndpoint.transfer(data, function(error){
-    done = true;
+
+// Event for receiving SPL TFTP request
+emitter.on('getTFTP', function(){
+
+    inEndpoint.transfer(MAXBUF, function(error, data){
+
+        var udpSPL_buf = Buffer.alloc(udpSize);
+
+        data.copy(udpSPL_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
+        
+        udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
+
+        console.log('TFTP request received');
+
+        done = true;
+    });
+
 });
 deasync.loopWhile(function(){return !done;});
-
-// Receive SPL TFTP request
-var udpSPL_buf = Buffer.alloc(udpSize);
-inEndpoint.timeout = 0;
-done = false;
-inEndpoint.transfer(MAXBUF, function(error, data){
-    data.copy(udpSPL_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
-    done = true;
-});
-deasync.loopWhile(function(){ return !done;});
-
-var udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
-
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////// SPL File Transfer ////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
