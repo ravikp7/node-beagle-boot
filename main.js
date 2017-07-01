@@ -35,7 +35,7 @@ var fs = require('fs');
 var os = require('os');
 var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
-var inEndpoint, outEndpoint, data;
+var inEndpoint, outEndpoint, data, ether, rndis, eth2, ip, udp, bootreply;
 
 // Set usb debug log
 //usb.setDebugLevel(4);   
@@ -148,15 +148,15 @@ emitter.on('getBOOTP', function(file){
 
             ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
 
-            var rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
+            rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
 
-            var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
+            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
 
-            var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
+            ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
 
-            var udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
+            udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
 
-            var bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
+            bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
 
             buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
 
