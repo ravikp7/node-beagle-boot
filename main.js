@@ -140,56 +140,60 @@ emitter.on('getBOOTP', function(file){
 
     inEndpoint.transfer(MAXBUF, function(error, data){
 
-        console.log('BOOTP received');
+        if(!error){
+            console.log('BOOTP received');
 
-        if(file == 'spl'){
+            if(file == 'spl'){
 
-            data.copy(bootp_buf, 0, rndisSize, MAXBUF);
+                data.copy(bootp_buf, 0, rndisSize, MAXBUF);
 
-            ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
+                ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
 
-            rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
+                rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
 
-            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
+                eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
 
-            ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
+                ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
 
-            udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
+                udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
 
-            bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
+                bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
 
-            buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
+                buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
 
+            }
+
+            else{
+
+                var udpUboot_buf = Buffer.alloc(udpSize);
+                
+                var spl_bootp_buf = Buffer.alloc(bootpSize);
+
+                data.copy(udpUboot_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
+
+                data.copy(spl_bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);  
+
+                var udpUboot = protocols.parse_udp(udpUboot_buf);       // parsed udp header
+
+                var spl_bootp = protocols.parse_bootp(spl_bootp_buf);   // parsed bootp header
+
+                rndis = protocols.make_rndis(fullSize - rndisSize);
+
+                eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
+
+                ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
+
+                udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
+
+                bootreply = protocols.make_bootp(servername, file_uboot, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
+
+                buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
+            }
+        
+            emitter.emit('sendBOOTP', file, buff);
         }
 
-        else{
-
-            var udpUboot_buf = Buffer.alloc(udpSize);
-            
-            var spl_bootp_buf = Buffer.alloc(bootpSize);
-
-            data.copy(udpUboot_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
-
-            data.copy(spl_bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);  
-
-            var udpUboot = protocols.parse_udp(udpUboot_buf);       // parsed udp header
-
-            var spl_bootp = protocols.parse_bootp(spl_bootp_buf);   // parsed bootp header
-
-            rndis = protocols.make_rndis(fullSize - rndisSize);
-
-            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
-
-            ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
-
-            udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
-
-            bootreply = protocols.make_bootp(servername, file_uboot, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
-
-            buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
-        }
-
-        emitter.emit('sendBOOTP', file, buff);
+        else console.log("ERROR receiving BOOTP "+ error);    
     });
 });
 
@@ -199,8 +203,11 @@ emitter.on('getBOOTP', function(file){
 emitter.on('sendBOOTP', function(file, data){
 
     outEndpoint.transfer(data, function(error){
-        console.log("BOOTP reply done");
-        emitter.emit('getARP', file);
+        if(!error){
+            console.log("BOOTP reply done");
+            emitter.emit('getARP', file);
+        }
+        else console.log("ERROR sending BOOTP "+ error);  
     });
 
 });
@@ -212,24 +219,28 @@ emitter.on('getARP', function(file){
 
     inEndpoint.transfer(MAXBUF, function(error, data){
 
-        console.log('ARP request received');
+        if(!error){
 
-        var arp_buf = Buffer.alloc(arp_Size);
+            console.log('ARP request received');
 
-        data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
-    
-        receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
+            var arp_buf = Buffer.alloc(arp_Size);
 
-        // ARP response
-        var arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
+            data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
+        
+            receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
 
-        rndis = protocols.make_rndis(etherSize + arp_Size);
+            // ARP response
+            var arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
 
-        eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
+            rndis = protocols.make_rndis(etherSize + arp_Size);
 
-        buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
+            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
 
-        emitter.emit('sendARP', file, buff);
+            buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
+
+            emitter.emit('sendARP', file, buff);
+        }
+        else console.log("ERROR receiving ARP request "+ error);  
     });
 
 });
@@ -239,9 +250,13 @@ emitter.on('sendARP', function(file, data){
 
     outEndpoint.transfer(data, function(error){
 
-        console.log('ARP response sent');
+        if(!error){
 
-        emitter.emit('getTFTP', file);
+            console.log('ARP response sent');
+
+            emitter.emit('getTFTP', file);
+        }
+        else console.log("ERROR sending ARP request "+ error);  
 
     });
 });
@@ -252,15 +267,19 @@ emitter.on('getTFTP', function(file){
 
     inEndpoint.transfer(MAXBUF, function(error, data){
 
-        var udpSPL_buf = Buffer.alloc(udpSize);
+        if(!error){
 
-        data.copy(udpSPL_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
-        
-        udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
+            var udpSPL_buf = Buffer.alloc(udpSize);
 
-        console.log('TFTP request received');
+            data.copy(udpSPL_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
+            
+            udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
 
-        emitter.emit('sendFile', file);
+            console.log('TFTP request received');
+
+            emitter.emit('sendFile', file);
+        }
+        else console.log("ERROR receiving TFTP request "+ error);  
     });
 
 });
