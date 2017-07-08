@@ -319,13 +319,14 @@ emitter.on('sendFile', function(file){
 
                 // Receive buffer back
                 inEndpoint.transfer(MAXBUF, function(error, data){});
-            
+                
             }
+
+            emitter.emit('transfer-done', file);
         }
         else console.log("Error reading "+file+" : "+error);
     })
 
-    emitter.emit('transfer-done', file);
 });
 
 emitter.on('transfer-done', function(file){
