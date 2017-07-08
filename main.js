@@ -289,36 +289,46 @@ emitter.on('getTFTP', function(file){
 emitter.on('sendFile', function(file){
     console.log(file+" transfer starts");
 
-    var spl = fs.readFileSync("./bin/"+file);
-    var blocks = Math.ceil(spl.length/512);         // Total number of blocks of file
-
-    eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    
-
-    var start = 0;                                  // Source start for copy
-
-    for(var i=1; i<=blocks; i++){                   // i is block number
-        
-        var blk_size = (i==blocks)? spl.length - (blocks-1)*512 : 512;  // Different block size for last block
-
-        var blk_data = Buffer.alloc(blk_size);
-        spl.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
-        start += blk_size; 
-
-        rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
-        ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
-        udp = protocols.make_udp(tftpSize + blk_size, udpSPL.udpDest, udpSPL.udpSrc);
-        tftp = protocols.make_tftp(3, i);
-
-        var spl_data = Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
-
-        // Send SPL file data
-        outEndpoint.transfer(spl_data, function(error){});
-
-        // Receive buffer back
-        inEndpoint.transfer(MAXBUF, function(error, data){});
+    fs.readFile("./bin/"+file, function(error, data){
     
-    }
+        if(!error){
+    
+            var blocks = Math.ceil(data.length/512);         // Total number of blocks of file
 
+            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    
+
+            var start = 0;                                  // Source start for copy
+
+            for(var i=1; i<=blocks; i++){                   // i is block number
+                
+                var blk_size = (i==blocks)? data.length - (blocks-1)*512 : 512;  // Different block size for last block
+
+                var blk_data = Buffer.alloc(blk_size);
+                data.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
+                start += blk_size; 
+
+                rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
+                ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
+                udp = protocols.make_udp(tftpSize + blk_size, udpSPL.udpDest, udpSPL.udpSrc);
+                tftp = protocols.make_tftp(3, i);
+
+                var file_data = Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
+
+                // Send SPL file data
+                outEndpoint.transfer(file_data, function(error){});
+
+                // Receive buffer back
+                inEndpoint.transfer(MAXBUF, function(error, data){});
+            
+            }
+        }
+        else console.log("Error reading "+file+" : "+error);
+    })
+
+    emitter.emit('transfer-done', file);
+});
+
+emitter.on('transfer-done', function(file){
     console.log(file+" transfer complete");
 
     if(file=='spl'){
