@@ -325,7 +325,7 @@ emitter.on('sendFile', function(file){
             emitter.emit('transfer-done', file);
         }
         else console.log("Error reading "+file+" : "+error);
-    })
+    });
 
 });
 
