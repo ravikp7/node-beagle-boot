@@ -1,6 +1,6 @@
 {
   "name": "beagle-boot",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "A bootloader server for BeagleBone hardware to boot it into mass storage mode",
   "main": "main.js",
   "dependencies": {

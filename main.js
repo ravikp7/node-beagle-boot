@@ -394,4 +394,4 @@ emitter.on('transfer-done', function(file){
 exports.usbMassStorage = function(){
     emitter.emit('init', 'spl', ROMVID, ROMPID, 0x02);
     return emitterMod;
-}
+};
