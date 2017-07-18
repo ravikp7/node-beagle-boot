@@ -81,7 +81,7 @@ emitter.on('init',function(file, vid, pid, outEnd){
         }
 
         catch(err){
-            console.log("Can't claim interface " +err);
+            emitterMod.emit('error', "Can't claim interface " +err);
         }
 
         description = "Interface claimed";
@@ -212,7 +212,7 @@ emitter.on('getBOOTP', function(file){
             emitter.emit('sendBOOTP', file, buff);
         }
 
-        else console.log("ERROR receiving BOOTP "+ error);    
+        else emitterMod.emit('error', "ERROR receiving BOOTP "+ error);    
     });
 });
 
@@ -229,7 +229,7 @@ emitter.on('sendBOOTP', function(file, data){
 
             emitter.emit('getARP', file);
         }
-        else console.log("ERROR sending BOOTP "+ error);  
+        else emitterMod.emit('error', "ERROR sending BOOTP "+ error);  
     });
 
 });
@@ -264,7 +264,7 @@ emitter.on('getARP', function(file){
 
             emitter.emit('sendARP', file, buff);
         }
-        else console.log("ERROR receiving ARP request "+ error);  
+        else emitterMod.emit('error', "ERROR receiving ARP request "+ error);  
     });
 
 });
@@ -282,7 +282,7 @@ emitter.on('sendARP', function(file, data){
 
             emitter.emit('getTFTP', file);
         }
-        else console.log("ERROR sending ARP request "+ error);  
+        else emitterMod.emit('error', "ERROR sending ARP request "+ error);  
 
     });
 });
@@ -307,7 +307,7 @@ emitter.on('getTFTP', function(file){
 
             emitter.emit('sendFile', file);
         }
-        else console.log("ERROR receiving TFTP request "+ error);  
+        else emitterMod.emit('error', "ERROR receiving TFTP request "+ error);  
     });
 
 });
@@ -354,7 +354,7 @@ emitter.on('sendFile', function(file){
 
             emitter.emit('transfer-done', file);
         }
-        else console.log("Error reading "+file+" : "+error);
+        else emitterMod.emit('error', "Error reading "+file+" : "+error);
     });
 
 });
