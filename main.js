@@ -391,4 +391,7 @@ emitter.on('transfer-done', function(file){
     }
 });
 
-emitter.emit('init', 'spl', ROMVID, ROMPID, 0x02);
+exports.usbMassStorage = function(){
+    emitter.emit('init', 'spl', ROMVID, ROMPID, 0x02);
+    return emitterMod;
+}
