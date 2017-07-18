@@ -1,6 +1,6 @@
 {
   "name": "beagle-boot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A bootloader server for BeagleBone hardware to boot it into mass storage mode",
   "main": "main.js",
   "dependencies": {
@@ -10,7 +10,7 @@
     "endian-toggle": "0.0.0"
   },
   "devDependencies": {
-     "jshint": "2.9.5"
+    "jshint": "2.9.5"
   },
   "scripts": {
     "start": "node main.js",
