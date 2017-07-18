@@ -32,6 +32,7 @@ var protocols = require('./src/protocols');
 var EventEmitter = require('events').EventEmitter;
 var emitter = new EventEmitter();
 var fs = require('fs');
+var path = require('path');
 var os = require('os');
 var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
@@ -319,7 +320,7 @@ emitter.on('sendFile', function(file){
     emitterMod.emit('progress', {description: description, complete: percent});
     percent += 5;
 
-    fs.readFile("./bin/"+file, function(error, data){
+    fs.readFile(path.join(__dirname, "bin", file), function(error, data){
     
         if(!error){
     
