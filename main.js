@@ -70,7 +70,13 @@ emitter.on('init',function(file, vid, pid, outEnd){
         }
     }
 
-    interface.claim();
+    try{
+        interface.claim();
+    }
+
+    catch(err){
+        console.log("Can't claim interface " +err);
+    }
 
     // Code to initialize RNDIS device on Windows and OSX
     if(platform != 'linux'){
