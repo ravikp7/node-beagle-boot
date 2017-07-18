@@ -26,7 +26,7 @@
     "rndis",
     "usb"
   ],
-  "author": "Ravi Kumar Prasad",
+  "author": "Ravi Kumar Prasad <7ravikp@gmail.com>",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/ravikp7/node-beagle-boot/issues"
