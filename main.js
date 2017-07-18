@@ -371,11 +371,24 @@ emitter.on('transfer-done', function(file){
         }, 2000);
     }
 
-    else
+    else{
         description = 'Ready for Flashing in a bit..';
         emitterMod.emit('progress', {description: description, complete: percent});
-        percent += 5;
-
+        percent += 10;
+        setTimeout(()=>{
+        try{
+            var umsDevice;
+            while(umsDevice === undefined){
+                umsDevice = usb.findByIds(0x0451, 0xd022);
+            }
+            emitterMod.emit('progress', {description: 'Done!', complete: percent});
+            emitterMod.emit('done');
+        }
+        catch(err){
+            emitterMod.emit('error', 'Try again! '+err);
+        }
+        }, 100);
+    }
 });
 
 emitter.emit('init', 'spl', ROMVID, ROMPID, 0x02);
