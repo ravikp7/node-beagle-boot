@@ -36,15 +36,20 @@ var os = require('os');
 var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
 var inEndpoint, outEndpoint, data, ether, rndis, eth2, ip, udp, bootreply;
+var emitterMod = new EventEmitter();    // Emitter for module status
+var percent = 0;    // Percentage for progress
+var description;    // Description for current status
 
 // Set usb debug log
 //usb.setDebugLevel(4);   
 
 
 // Connect to BeagleBone
-if(!usb.findByIds(ROMVID, ROMPID))
-console.log("Connect your BeagleBone by holding down BOOT switch");
-
+if(!usb.findByIds(ROMVID, ROMPID)){
+    description = "Connect your BeagleBone by holding down BOOT switch";
+    emitterMod.emit('progress', {description: description, complete: percent});
+    percent += 5;
+}
 
 // Event for device initialization
 emitter.on('init',function(file, vid, pid, outEnd){
@@ -55,7 +60,9 @@ emitter.on('init',function(file, vid, pid, outEnd){
     device = usb.findByIds(vid, pid);
     }
     
-    console.log(file+" =>");
+    description = file+" =>";
+    emitterMod.emit('progress', {description: description, complete: percent});
+    percent += 5;
 
     device.open();
     var interface = device.interface(1);    // Select interface 1 for BULK transfers
@@ -77,6 +84,10 @@ emitter.on('init',function(file, vid, pid, outEnd){
     catch(err){
         console.log("Can't claim interface " +err);
     }
+
+    description = "Interface claimed";
+    emitterMod.emit('progress', {description: description, complete: percent});
+    percent += 5;
 
     // Code to initialize RNDIS device on Windows and OSX
     if(platform != 'linux'){
@@ -147,7 +158,9 @@ emitter.on('getBOOTP', function(file){
     inEndpoint.transfer(MAXBUF, function(error, data){
 
         if(!error){
-            console.log('BOOTP received');
+            description = 'BOOTP received';
+            emitterMod.emit('progress', {description: description, complete: percent});
+            percent += 5;
 
             if(file == 'spl'){
 
@@ -210,7 +223,10 @@ emitter.on('sendBOOTP', function(file, data){
 
     outEndpoint.transfer(data, function(error){
         if(!error){
-            console.log("BOOTP reply done");
+            description = "BOOTP reply done";
+            emitterMod.emit('progress', {description: description, complete: percent});
+            percent += 5;
+
             emitter.emit('getARP', file);
         }
         else console.log("ERROR sending BOOTP "+ error);  
@@ -227,7 +243,9 @@ emitter.on('getARP', function(file){
 
         if(!error){
 
-            console.log('ARP request received');
+            description = 'ARP request received';
+            emitterMod.emit('progress', {description: description, complete: percent});
+            percent += 5;
 
             var arp_buf = Buffer.alloc(arp_Size);
 
@@ -258,7 +276,9 @@ emitter.on('sendARP', function(file, data){
 
         if(!error){
 
-            console.log('ARP response sent');
+            description = 'ARP response sent';
+            emitterMod.emit('progress', {description: description, complete: percent});
+            percent += 5;
 
             emitter.emit('getTFTP', file);
         }
@@ -281,7 +301,9 @@ emitter.on('getTFTP', function(file){
             
             udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
 
-            console.log('TFTP request received');
+            description = 'TFTP request received';
+            emitterMod.emit('progress', {description: description, complete: percent});
+            percent += 5;
 
             emitter.emit('sendFile', file);
         }
@@ -293,7 +315,9 @@ emitter.on('getTFTP', function(file){
 ///////////////////////////////////////////// File Transfer ////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 emitter.on('sendFile', function(file){
-    console.log(file+" transfer starts");
+    description = file+" transfer starts";
+    emitterMod.emit('progress', {description: description, complete: percent});
+    percent += 5;
 
     fs.readFile("./bin/"+file, function(error, data){
     
@@ -336,7 +360,9 @@ emitter.on('sendFile', function(file){
 });
 
 emitter.on('transfer-done', function(file){
-    console.log(file+" transfer complete");
+    description = file+" transfer complete";
+    emitterMod.emit('progress', {description: description, complete: percent});
+    percent += 5;
 
     if(file=='spl'){
 
@@ -346,7 +372,9 @@ emitter.on('transfer-done', function(file){
     }
 
     else
-        console.log('Ready for Flashing in a bit..');
+        description = 'Ready for Flashing in a bit..';
+        emitterMod.emit('progress', {description: description, complete: percent});
+        percent += 5;
 
 });
 
