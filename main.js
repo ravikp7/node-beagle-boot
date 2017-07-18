@@ -72,8 +72,8 @@ emitter.on('init',function(file, vid, pid, outEnd){
 
     interface.claim();
 
-    // Windows specific code to initialize RNDIS device
-    if(windows){
+    // Code to initialize RNDIS device on Windows and OSX
+    if(platform != 'linux'){
         var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
         intf0.claim();
 
