@@ -43,109 +43,109 @@ var description;    // Description for current status
 // Set usb debug log
 //usb.setDebugLevel(4);   
 
-
-// Connect to BeagleBone
-if(!usb.findByIds(ROMVID, ROMPID)){
-    description = "Connect your BeagleBone by holding down BOOT switch";
-    emitterMod.emit('progress', {description: description, complete: percent});
-    percent += 5;
-}
-
 // Event for device initialization
 emitter.on('init',function(file, vid, pid, outEnd){
-
-    // Connect to BeagleBone
-    var device;
-    while(device === undefined){
-    device = usb.findByIds(vid, pid);
-    }
     
-    description = file+" =>";
-    emitterMod.emit('progress', {description: description, complete: percent});
-    percent += 5;
-
-    device.open();
-    var interface = device.interface(1);    // Select interface 1 for BULK transfers
-
-    windows = 0;
-    if(platform == 'win32') windows = 1; 
-
-    if(!windows){                // Not supported in Windows
-        // Detach Kernel Driver
-        if(interface.isKernelDriverActive()){
-            interface.detachKernelDriver();
+    setTimeout(()=>{                // Set Timeout 0 to make it async
+        
+        // Connect to BeagleBone
+        var device = usb.findByIds(vid, pid);
+        if(!device){
+            description = "Connect your BeagleBone by holding down BOOT switch";
+            emitterMod.emit('progress', {description: description, complete: percent});
         }
-    }
 
-    try{
-        interface.claim();
-    }
+        while(device === undefined){
+            device = usb.findByIds(vid, pid);
+        }
+        
+        description = file+" =>";
+        emitterMod.emit('progress', {description: description, complete: percent});
+        percent += 5;
 
-    catch(err){
-        console.log("Can't claim interface " +err);
-    }
+        device.open();
+        var interface = device.interface(1);    // Select interface 1 for BULK transfers
 
-    description = "Interface claimed";
-    emitterMod.emit('progress', {description: description, complete: percent});
-    percent += 5;
+        windows = 0;
+        if(platform == 'win32') windows = 1; 
 
-    // Code to initialize RNDIS device on Windows and OSX
-    if(platform != 'linux'){
-        var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
-        intf0.claim();
+        if(!windows){                // Not supported in Windows
+            // Detach Kernel Driver
+            if(interface.isKernelDriverActive()){
+                interface.detachKernelDriver();
+            }
+        }
 
-        var CONTROL_BUFFER_SIZE = 1025;  
-        var rndis_init_size = 24;
-        var rndis_set_size = 28;
+        try{
+            interface.claim();
+        }
 
-        var rndis_buf = Buffer.alloc(CONTROL_BUFFER_SIZE);
-        var init_msg = rndis_win.make_rndis_init();
-        init_msg.copy(rndis_buf, 0, 0, rndis_init_size);
+        catch(err){
+            console.log("Can't claim interface " +err);
+        }
+
+        description = "Interface claimed";
+        emitterMod.emit('progress', {description: description, complete: percent});
+        percent += 5;
+
+        // Code to initialize RNDIS device on Windows and OSX
+        if(platform != 'linux'){
+            var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
+            intf0.claim();
+
+            var CONTROL_BUFFER_SIZE = 1025;  
+            var rndis_init_size = 24;
+            var rndis_set_size = 28;
+
+            var rndis_buf = Buffer.alloc(CONTROL_BUFFER_SIZE);
+            var init_msg = rndis_win.make_rndis_init();
+            init_msg.copy(rndis_buf, 0, 0, rndis_init_size);
 
 
-        // Windows Control Transfer
-        // https://msdn.microsoft.com/en-us/library/aa447434.aspx
-        // http://www.beyondlogic.org/usbnutshell/usb6.shtml
+            // Windows Control Transfer
+            // https://msdn.microsoft.com/en-us/library/aa447434.aspx
+            // http://www.beyondlogic.org/usbnutshell/usb6.shtml
 
-        var bmRequestType_send = 0x21; // USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
-        var bmRequestType_receive = 0xA1; // USB_DATA=DeviceToHost | USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
+            var bmRequestType_send = 0x21; // USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
+            var bmRequestType_receive = 0xA1; // USB_DATA=DeviceToHost | USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
 
-        // Sending rndis_init_msg (SEND_ENCAPSULATED_COMMAND)
-        device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
-            console.log(error);
-        });
+            // Sending rndis_init_msg (SEND_ENCAPSULATED_COMMAND)
+            device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
+                console.log(error);
+            });
 
-        // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
-        device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
-            console.log(data);
-        });
+            // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
+            device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
+                console.log(data);
+            });
 
 
-        var set_msg = rndis_win.make_rndis_set();
-        set_msg.copy(rndis_buf, 0, 0, rndis_set_size+4);
+            var set_msg = rndis_win.make_rndis_set();
+            set_msg.copy(rndis_buf, 0, 0, rndis_set_size+4);
 
-        // Send rndis_set_msg (SEND_ENCAPSULATED_COMMAND)
-        device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
-            console.log(error);
-        });
+            // Send rndis_set_msg (SEND_ENCAPSULATED_COMMAND)
+            device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
+                console.log(error);
+            });
 
-        // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
-        device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
-            console.log(data);
-        });
+            // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
+            device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
+                console.log(data);
+            });
 
-    }                      
+        }                      
 
-    // Set endpoints for usb transfer
-    inEndpoint = interface.endpoint(0x81);
-    outEndpoint = interface.endpoint(outEnd);
+        // Set endpoints for usb transfer
+        inEndpoint = interface.endpoint(0x81);
+        outEndpoint = interface.endpoint(outEnd);
 
-    // Set endpoint transfer type
-    inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-    outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+        // Set endpoint transfer type
+        inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+        outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 
-    emitter.emit('getBOOTP', file);
+        emitter.emit('getBOOTP', file);
 
+    },0);
 });
 
 
