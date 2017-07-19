@@ -38,7 +38,7 @@ var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
 var inEndpoint, outEndpoint, data, ether, rndis, eth2, ip, udp, bootreply;
 var emitterMod = new EventEmitter();    // Emitter for module status
-var percent = 0;    // Percentage for progress
+var percent;    // Percentage for progress
 var description;    // Description for current status
 
 // Set usb debug log
@@ -47,6 +47,8 @@ var description;    // Description for current status
 // Event for device initialization
 emitter.on('init',function(file, vid, pid, outEnd){
     
+    if(file === 'spl') percent = 0;
+
     setTimeout(()=>{                // Set Timeout 0 to make it async
         
         // Connect to BeagleBone
