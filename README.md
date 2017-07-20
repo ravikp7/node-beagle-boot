@@ -15,55 +15,73 @@ The tool works as:
 2. Utilizing the ums feature of u-boot, booting the BB hardware into USB mass storage mode. 
 3. Flashing the BB hardware with etcher.io like tool
 
+#### Code for complete app [here](https://github.com/ravikp7/BeagleBoot)
+
 ## Recommended node version 6+
 
-### Installation steps:
+### Installation of prerequisite packages:
 ### Linux
 #### Ubuntu / Debian
-1. Clone this repo and cd into it.
-2. Run command to install dependencies
+1. Run command to install usb drivers
 ```
 sudo apt-get install build-essential libudev-dev
 ```
-```
-sudo npm install
-```
-3. Connect BB through usb by holding down S2 (boot button).
-4. Start server by running command
-```
-sudo npm start
-```
-It should now boot BB into usb mass storage mode.
 
 ### Windows
-1. Clone this repo and cd into it.
-2. Connect BB through usb by holding down S2 (boot button).
-3. Install am335x usb drivers through [Zadig](http://zadig.akeo.ie/).
-4. Open Zadig, select Options -> List all devices. Select AM335x usb from list and install WinUSB driver.
-5. From admin power shell or cmd run:
-```
-npm install
-```
-```
-npm start
-```
-It should now boot BB into usb mass storage mode.
+1. Connect BB through usb by holding down S2 (boot button).
+2. Install am335x usb drivers through [Zadig](http://zadig.akeo.ie/).
+3. Open Zadig, select Options -> List all devices. Select AM335x usb from list and install WinUSB driver.
  
 
 ### OSX
-1. Clone this repo and cd into it.
-2. Run command to install dependencies
+1. Run command to install usb drivers
 ```
-brew install libudev-dev
+brew install libusb
 ```
+
+## Installation
+___
 ```
-sudo npm install
+npm install --save beagle-boot
 ```
-3. Connect BB through usb by holding down S2 (boot button).
-4. Start server by running command
+
+## API Documentation
+___
+### require('beagle-boot').usbMassStorage() => `EventEmitter`
+The returned EventEmitter instance emits following events:
+* `progress`: A progress event that passes state object of form:
 ```
-sudo npm start
+{
+    description: 'ARP request sent',    // Current status
+    complete: 20    // Percent complete
+}
 ```
+* `done`: An event emitted after process success which passes nothing.
+* `error`: An error event which passes error.
+
+### Example
+___
+```
+var BB = require('beagle-boot');
+
+var ums = BB.usbMassStorage();
+
+ums.on('progress', function(status){
+    console.log(status);
+});
+
+ums.on('done', function(){
+    console.log('Select Image');
+});
+
+ums.on('error', function(error){
+    console.log('Error: '+error);
+});
+```
+
+### Steps before running this module:
+* Connect BB through usb by holding down S2 (boot button).
+
 It should now boot BB into usb mass storage mode.
 
 
