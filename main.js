@@ -40,7 +40,7 @@ var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
 var inEndpoint, outEndpoint, data, ether, rndis, eth2, ip, udp, bootreply;
 var emitterMod = new EventEmitter();    // Emitter for module status
-var percent = 0;    // Percentage for progress
+var percent;    // Percentage for progress
 var description;    // Description for current status
 
 // Set usb debug log
@@ -67,6 +67,8 @@ exports.usbMassStorage = function(){
 
 // Event for device initialization
 emitter.on('init', function(file, device, outEnd){
+
+    if(file === 'spl') percent = 0;
 
     description = file+" =>";
     emitterMod.emit('progress', {description: description, complete: percent});
