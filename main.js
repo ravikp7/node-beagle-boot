@@ -14,6 +14,8 @@ const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
 const servername = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84];       // ASCII ['B','E','A','G','L','E','B','O','O','T']
 const file_spl = [83, 80, 76, 0, 0];                             // ASCII ['S','P','L']
 const file_uboot = [85, 66, 79, 79, 84];                           // ASCII ['U','B','O','O','T']
+const UMSVID = 0x0451;
+const UMSPID = 0xd022;
 
 // Size of all packets
 var rndisSize = 44;
@@ -38,115 +40,119 @@ var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
 var inEndpoint, outEndpoint, data, ether, rndis, eth2, ip, udp, bootreply;
 var emitterMod = new EventEmitter();    // Emitter for module status
-var percent;    // Percentage for progress
+var percent = 0;    // Percentage for progress
 var description;    // Description for current status
 
 // Set usb debug log
 //usb.setDebugLevel(4);   
 
-// Event for device initialization
-emitter.on('init',function(file, vid, pid, outEnd){
+exports.usbMassStorage = function(){
     
-    if(file === 'spl') percent = 0;
+    // Connect to BeagleBone
+    usb.on('attach', function(device){
 
-    setTimeout(()=>{                // Set Timeout 0 to make it async
-        
-        // Connect to BeagleBone
-        var device = usb.findByIds(vid, pid);
-        if(!device){
-            description = "Connect your BeagleBone by holding down BOOT switch";
-            emitterMod.emit('progress', {description: description, complete: percent});
+        if(device === usb.findByIds(ROMVID, ROMPID))
+            emitter.emit('init', 'spl', device, 0x02);
+
+        if(device === usb.findByIds(SPLVID, SPLPID))
+            setTimeout(()=>{emitter.emit('init', 'uboot', device, 0x01);}, 1000);
+
+        if(device === usb.findByIds(UMSVID, UMSPID))
+            emitterMod.emit('progress', {description: 'Ready for Flashing!', complete: 100});
+    });
+
+    return emitterMod;
+};
+
+
+// Event for device initialization
+emitter.on('init', function(file, device, outEnd){
+
+    description = file+" =>";
+    emitterMod.emit('progress', {description: description, complete: percent});
+    percent += 5;
+
+    device.open();
+    var interface = device.interface(1);    // Select interface 1 for BULK transfers
+
+    windows = 0;
+    if(platform == 'win32') windows = 1; 
+
+    if(!windows){                // Not supported in Windows
+        // Detach Kernel Driver
+        if(interface.isKernelDriverActive()){
+            interface.detachKernelDriver();
         }
+    }
 
-        else{
-        
-            description = file+" =>";
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
+    try{
+        interface.claim();
+    }
 
-            device.open();
-            var interface = device.interface(1);    // Select interface 1 for BULK transfers
+    catch(err){
+        emitterMod.emit('error', "Can't claim interface " +err);
+    }
 
-            windows = 0;
-            if(platform == 'win32') windows = 1; 
+    description = "Interface claimed";
+    emitterMod.emit('progress', {description: description, complete: percent});
+    percent += 5;
 
-            if(!windows){                // Not supported in Windows
-                // Detach Kernel Driver
-                if(interface.isKernelDriverActive()){
-                    interface.detachKernelDriver();
-                }
-            }
+    // Code to initialize RNDIS device on Windows and OSX
+    if(platform != 'linux'){
+        var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
+        intf0.claim();
 
-            try{
-                interface.claim();
-            }
+        var CONTROL_BUFFER_SIZE = 1025;  
+        var rndis_init_size = 24;
+        var rndis_set_size = 28;
 
-            catch(err){
-                emitterMod.emit('error', "Can't claim interface " +err);
-            }
-
-            description = "Interface claimed";
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
-
-            // Code to initialize RNDIS device on Windows and OSX
-            if(platform != 'linux'){
-                var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
-                intf0.claim();
-
-                var CONTROL_BUFFER_SIZE = 1025;  
-                var rndis_init_size = 24;
-                var rndis_set_size = 28;
-
-                var rndis_buf = Buffer.alloc(CONTROL_BUFFER_SIZE);
-                var init_msg = rndis_win.make_rndis_init();
-                init_msg.copy(rndis_buf, 0, 0, rndis_init_size);
+        var rndis_buf = Buffer.alloc(CONTROL_BUFFER_SIZE);
+        var init_msg = rndis_win.make_rndis_init();
+        init_msg.copy(rndis_buf, 0, 0, rndis_init_size);
 
 
-                // Windows Control Transfer
-                // https://msdn.microsoft.com/en-us/library/aa447434.aspx
-                // http://www.beyondlogic.org/usbnutshell/usb6.shtml
+        // Windows Control Transfer
+        // https://msdn.microsoft.com/en-us/library/aa447434.aspx
+        // http://www.beyondlogic.org/usbnutshell/usb6.shtml
 
-                var bmRequestType_send = 0x21; // USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
-                var bmRequestType_receive = 0xA1; // USB_DATA=DeviceToHost | USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
+        var bmRequestType_send = 0x21; // USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
+        var bmRequestType_receive = 0xA1; // USB_DATA=DeviceToHost | USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
 
-                // Sending rndis_init_msg (SEND_ENCAPSULATED_COMMAND)
-                device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
-                    console.log(error);
-                });
+        // Sending rndis_init_msg (SEND_ENCAPSULATED_COMMAND)
+        device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
+            console.log(error);
+        });
 
-                // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
-                device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
-                    console.log(data);
-                });
+        // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
+        device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
+            console.log(data);
+        });
 
 
-                var set_msg = rndis_win.make_rndis_set();
-                set_msg.copy(rndis_buf, 0, 0, rndis_set_size+4);
+        var set_msg = rndis_win.make_rndis_set();
+        set_msg.copy(rndis_buf, 0, 0, rndis_set_size+4);
 
-                // Send rndis_set_msg (SEND_ENCAPSULATED_COMMAND)
-                device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
-                    console.log(error);
-                });
+        // Send rndis_set_msg (SEND_ENCAPSULATED_COMMAND)
+        device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
+            console.log(error);
+        });
 
-                // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
-                device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
-                    console.log(data);
-                });
+        // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
+        device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
+            console.log(data);
+        });
 
-            }                      
+    }                      
 
-            // Set endpoints for usb transfer
-            inEndpoint = interface.endpoint(0x81);
-            outEndpoint = interface.endpoint(outEnd);
+    // Set endpoints for usb transfer
+    inEndpoint = interface.endpoint(0x81);
+    outEndpoint = interface.endpoint(outEnd);
 
-            // Set endpoint transfer type
-            inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-            outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+    // Set endpoint transfer type
+    inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+    outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 
-            emitter.emit('getBOOTP', file);
-        }
-    },0);
+    emitter.emit('getBOOTP', file);
 });
 
 
@@ -364,35 +370,4 @@ emitter.on('transfer-done', function(file){
     description = file+" transfer complete";
     emitterMod.emit('progress', {description: description, complete: percent});
     percent += 5;
-
-    if(file=='spl'){
-
-        setTimeout(function(){
-        emitter.emit('init', 'uboot', SPLVID, SPLPID, 0x01);
-        }, 2000);
-    }
-
-    else{
-        description = 'Ready for Flashing in a bit..';
-        emitterMod.emit('progress', {description: description, complete: percent});
-        percent += 10;
-        setTimeout(()=>{
-        try{
-            var umsDevice;
-            while(umsDevice === undefined){
-                umsDevice = usb.findByIds(0x0451, 0xd022);
-            }
-            emitterMod.emit('progress', {description: 'Done!', complete: percent});
-            emitterMod.emit('done');
-        }
-        catch(err){
-            emitterMod.emit('error', 'Try again! '+err);
-        }
-        }, 100);
-    }
 });
-
-exports.usbMassStorage = function(){
-    emitter.emit('init', 'spl', ROMVID, ROMPID, 0x02);
-    return emitterMod;
-};
