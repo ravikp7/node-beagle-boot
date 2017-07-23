@@ -52,10 +52,10 @@ exports.usbMassStorage = function(){
     usb.on('attach', function(device){
 
         if(device === usb.findByIds(ROMVID, ROMPID))
-            emitter.emit('init', 'spl', device, 0x02);
+            transfer('spl', device, 0x02);
 
         if(device === usb.findByIds(SPLVID, SPLPID))
-            setTimeout(()=>{emitter.emit('init', 'uboot', device, 0x01);}, 1000);
+            setTimeout(()=>{ transfer('uboot', device, 0x01); }, 1000);
 
         if(device === usb.findByIds(UMSVID, UMSPID))
             emitterMod.emit('progress', {description: 'Ready for Flashing!', complete: 100});
@@ -65,9 +65,8 @@ exports.usbMassStorage = function(){
 };
 
 
-// Event for device initialization
-emitter.on('init', function(file, device, outEnd){
-
+// Function for device initialization
+function transfer(file, device, outEnd){
     if(file === 'spl') percent = 0;
 
     description = file+" =>";
@@ -155,7 +154,7 @@ emitter.on('init', function(file, device, outEnd){
     outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 
     emitter.emit('getBOOTP', file);
-});
+}
 
 
 
@@ -361,15 +360,10 @@ emitter.on('sendFile', function(file){
                 
             }
 
-            emitter.emit('transfer-done', file);
+            description = file+" transfer complete";
+            emitterMod.emit('progress', {description: description, complete: percent});
+            percent += 5;
         }
         else emitterMod.emit('error', "Error reading "+file+" : "+error);
     });
-
-});
-
-emitter.on('transfer-done', function(file){
-    description = file+" transfer complete";
-    emitterMod.emit('progress', {description: description, complete: percent});
-    percent += 5;
 });
