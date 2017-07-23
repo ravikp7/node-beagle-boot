@@ -212,23 +212,7 @@ emitter.on('getARP', function(file){
             description = 'ARP request received';
             emitterMod.emit('progress', {description: description, complete: percent});
             percent += 5;
-
-            var arp_buf = Buffer.alloc(arp_Size);
-
-            data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
-        
-            receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
-
-            // ARP response
-            var arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
-
-            rndis = protocols.make_rndis(etherSize + arp_Size);
-
-            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
-
-            buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
-
-            emitter.emit('sendARP', file, buff);
+            emitter.emit('sendARP', file, processARP(data));
         }
         else emitterMod.emit('error', "ERROR receiving ARP request "+ error);  
     });
@@ -338,7 +322,7 @@ function identifyRequest(buff){
 
 }
 
-// Function to process bootp
+// Function to process BOOTP request
 function processBOOTP(file, data){
 
     var bootp_buf = Buffer.alloc(MAXBUF-rndisSize); 
@@ -389,6 +373,26 @@ function processBOOTP(file, data){
 
         buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
     }
+
+    return buff;
+}
+
+// Function to process ARP request
+function processARP(data){
+    var arp_buf = Buffer.alloc(arp_Size);
+
+    data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
+        
+    receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
+
+    // ARP response
+    var arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
+
+    rndis = protocols.make_rndis(etherSize + arp_Size);
+
+    eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
+
+    buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
 
     return buff;
 }
