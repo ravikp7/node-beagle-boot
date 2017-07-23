@@ -38,7 +38,7 @@ var path = require('path');
 var os = require('os');
 var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
-var inEndpoint, outEndpoint, data, ether, rndis, eth2, ip, udp, bootreply;
+var inEndpoint, outEndpoint, Data, ether, rndis, eth2, ip, udp, bootreply;
 var emitterMod = new EventEmitter();    // Emitter for module status
 var percent;    // Percentage for progress
 var description;    // Description for current status
@@ -160,102 +160,61 @@ function transfer(file, device, outEnd){
     inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
     outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 
-    emitter.emit('getBOOTP', file);
+    emitter.emit('inTransfer', file);
 }
 
 
 
-// Event for receiving BOOTP
-emitter.on('getBOOTP', function(file){
+// Event for inEnd transfer
+emitter.on('inTransfer', function(file){
 
     inEndpoint.transfer(MAXBUF, function(error, data){
 
-        if(!error){
-            description = 'BOOTP received';
-            emitterMod.emit('progress', {description: description, complete: percent});
+        if(!error){           
+            var request = identifyRequest(data);
+
+            emitterMod.emit('progress', {description: request + " request received", complete: percent});
             percent += 5;
 
-            emitter.emit('sendBOOTP', file, processBOOTP(file, data));
+            if(request == 'BOOTP') Data = processBOOTP(file, data);
+
+            if(request == 'ARP') Data = processARP(data);
+
+            if(request == 'TFTP') {               
+                Data = processTFTP(data);
+                emitter.emit('sendFile', file);
+            }
+
+            else emitter.emit('outTransfer', file, Data, request);
         }
 
-        else emitterMod.emit('error', "ERROR receiving BOOTP "+ error);    
-    });
-});
+        else {
+            emitterMod.emit('error', "ERROR in inTransfer");
+            console.log(error);
+        }
+    })
+})
 
 
-
-// Event for sending BOOTP reply
-emitter.on('sendBOOTP', function(file, data){
+// Event for outEnd Transfer
+emitter.on('outTransfer', function(file, data, request){
 
     outEndpoint.transfer(data, function(error){
-        if(!error){
-            description = "BOOTP reply done";
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
-
-            emitter.emit('getARP', file);
-        }
-        else emitterMod.emit('error', "ERROR sending BOOTP "+ error);  
-    });
-
-});
-
-
-
-// Event for receiving ARP request
-emitter.on('getARP', function(file){
-
-    inEndpoint.transfer(MAXBUF, function(error, data){
-
-        if(!error){
-
-            description = 'ARP request received';
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
-            emitter.emit('sendARP', file, processARP(data));
-        }
-        else emitterMod.emit('error', "ERROR receiving ARP request "+ error);  
-    });
-
-});
-
-// Event for sending ARP response
-emitter.on('sendARP', function(file, data){
-
-    outEndpoint.transfer(data, function(error){
-
-        if(!error){
-
-            description = 'ARP response sent';
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
-
-            emitter.emit('getTFTP', file);
-        }
-        else emitterMod.emit('error', "ERROR sending ARP request "+ error);  
-
-    });
-});
-
-
-// Event for receiving SPL TFTP request
-emitter.on('getTFTP', function(file){
-
-    inEndpoint.transfer(MAXBUF, function(error, data){
-
-        if(!error){
         
-            processTFTP(data);
-            description = 'TFTP request received';
-            emitterMod.emit('progress', {description: description, complete: percent});
+        if(!error){
+            emitterMod.emit('progress', {description: request + " reply done", complete: percent});
             percent += 5;
 
-            emitter.emit('sendFile', file);
+            emitter.emit('inTransfer', file);
         }
-        else emitterMod.emit('error', "ERROR receiving TFTP request "+ error);  
+        else {
+            emitterMod.emit('error', "ERROR sending " + request);
+            console.log(error);
+        }  
     });
+    
+})
 
-});
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////// File Transfer ////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
