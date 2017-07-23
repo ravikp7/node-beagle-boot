@@ -244,13 +244,8 @@ emitter.on('getTFTP', function(file){
     inEndpoint.transfer(MAXBUF, function(error, data){
 
         if(!error){
-
-            var udpSPL_buf = Buffer.alloc(udpSize);
-
-            data.copy(udpSPL_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
-            
-            udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
-
+        
+            processTFTP(data);
             description = 'TFTP request received';
             emitterMod.emit('progress', {description: description, complete: percent});
             percent += 5;
@@ -379,6 +374,7 @@ function processBOOTP(file, data){
 
 // Function to process ARP request
 function processARP(data){
+
     var arp_buf = Buffer.alloc(arp_Size);
 
     data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
@@ -395,4 +391,15 @@ function processARP(data){
     buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
 
     return buff;
+}
+
+// Function to process TFTP request
+function processTFTP(data){
+
+    var udpSPL_buf = Buffer.alloc(udpSize);
+
+    data.copy(udpSPL_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
+            
+    udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
+
 }
