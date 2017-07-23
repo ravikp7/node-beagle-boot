@@ -73,6 +73,13 @@ function transfer(file, device, outEnd){
     emitterMod.emit('progress', {description: description, complete: percent});
     percent += 5;
 
+    if(file == 'uboot' && platform != 'linux'){
+        device.open(false);
+        device.setConfiguration(2, function(err){console.log("Error");});
+        _device.__open();
+        _device.__claimInterface(0);
+    }
+
     device.open();
     var interface = device.interface(1);    // Select interface 1 for BULK transfers
 
@@ -99,7 +106,7 @@ function transfer(file, device, outEnd){
     percent += 5;
 
     // Code to initialize RNDIS device on Windows and OSX
-    if(platform != 'linux'){
+    if(platform != 'linux' && file == 'spl'){
         var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
         intf0.claim();
 
