@@ -374,3 +374,15 @@ emitter.on('sendFile', function(file){
         else emitterMod.emit('error', "Error reading "+file+" : "+error);
     });
 });
+
+// Function to identify request packet
+function identifyRequest(buff){
+    var val = buff[4];
+
+    if(val == 0xc2 || val == 0x6c) return 'BOOTP';
+
+    if(val == 0x56) return 'ARP';
+
+    if(val == 0x62 || val == 0x7b) return 'TFTP';
+
+}
