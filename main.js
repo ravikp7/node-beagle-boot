@@ -93,9 +93,9 @@ function transfer(file, device, outEnd){
 
     if(file == 'uboot' && platform != 'linux'){
         device.open(false);
-        device.setConfiguration(2, function(err){console.log("Error");});
-        _device.__open();
-        _device.__claimInterface(0);
+        device.setConfiguration(2, function(err){console.log(err);});
+        device.__open();
+        device.__claimInterface(0);
     }
 
     device.open();
