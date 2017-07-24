@@ -38,7 +38,7 @@ var path = require('path');
 var os = require('os');
 var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
-var inEndpoint, outEndpoint, Data, ether, rndis, eth2, ip, udp, bootreply;
+var inEndpoint, outEndpoint, Data, ether, rndis, eth2, ip, udp, bootreply, romDevice, splDevice, umsDevice;
 var emitterMod = new EventEmitter();    // Emitter for module status
 var percent;    // Percentage for progress
 var description;    // Description for current status
@@ -51,14 +51,32 @@ exports.usbMassStorage = function(){
     // Connect to BeagleBone
     usb.on('attach', function(device){
 
-        if(device === usb.findByIds(ROMVID, ROMPID))
+        if(device === usb.findByIds(ROMVID, ROMPID)){
             transfer('spl', device, 0x02);
+            romDevice = device;
+        }
 
-        if(device === usb.findByIds(SPLVID, SPLPID))
+        if(device === usb.findByIds(SPLVID, SPLPID)){
             setTimeout(()=>{ transfer('uboot', device, 0x01); }, 1000);
+            splDevice = device;
+        }
 
-        if(device === usb.findByIds(UMSVID, UMSPID))
+        if(device === usb.findByIds(UMSVID, UMSPID)){
             emitterMod.emit('progress', {description: 'Ready for Flashing!', complete: 100});
+            umsDevice = device;
+        }
+    });
+
+    usb.on('detach', function(device){       
+
+        if(device === romDevice && percent < 40)
+            emitterMod.emit('disconnect', 'ROM');
+
+        if(device === splDevice && percent < 85)
+            emitterMod.emit('disconnect', 'SPL');
+        
+        if(device === umsDevice)
+            emitterMod.emit('disconnect', 'UMS');
     });
 
     return emitterMod;
