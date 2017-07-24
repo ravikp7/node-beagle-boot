@@ -93,7 +93,7 @@ function transfer(file, device, outEnd){
 
     if(file == 'uboot' && platform != 'linux'){
         device.open(false);
-        device.setConfiguration(2, function(err){console.log(err);});
+        device.setConfiguration(2, function(err){if(err) console.log(err);});
         device.__open();
         device.__claimInterface(0);
     }
@@ -187,7 +187,7 @@ function transfer(file, device, outEnd){
 emitter.on('inTransfer', function(file){
 
     inEndpoint.transfer(MAXBUF, function(error, data){
-
+        
         if(!error){           
             var request = identifyRequest(data);
             
