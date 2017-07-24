@@ -192,8 +192,8 @@ emitter.on('inTransfer', function(file){
             emitterMod.emit('error', "ERROR in inTransfer");
             console.log(error);
         }
-    })
-})
+    });
+});
 
 
 // Event for outEnd Transfer
@@ -213,7 +213,7 @@ emitter.on('outTransfer', function(file, data, request){
         }  
     });
     
-})
+});
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////// File Transfer ////////////////////////////////////////////////
