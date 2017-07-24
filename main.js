@@ -190,20 +190,25 @@ emitter.on('inTransfer', function(file){
 
         if(!error){           
             var request = identifyRequest(data);
+            
+            if(request === 'notIdentified') emitter.emit('inTransfer', file);
 
-            emitterMod.emit('progress', {description: request + " request received", complete: percent});
-            percent += 5;
+            else {
 
-            if(request == 'BOOTP') Data = processBOOTP(file, data);
+                emitterMod.emit('progress', {description: request + " request received", complete: percent});
+                percent += 5;
 
-            if(request == 'ARP') Data = processARP(data);
+                if(request == 'BOOTP') Data = processBOOTP(file, data);
 
-            if(request == 'TFTP') {               
-                Data = processTFTP(data);
-                emitter.emit('sendFile', file);
+                if(request == 'ARP') Data = processARP(data);
+
+                if(request == 'TFTP') {               
+                    Data = processTFTP(data);
+                    emitter.emit('sendFile', file);
+                }
+
+                else emitter.emit('outTransfer', file, Data, request);
             }
-
-            else emitter.emit('outTransfer', file, Data, request);
         }
 
         else {
@@ -291,6 +296,8 @@ function identifyRequest(buff){
     if(val == 0x56) return 'ARP';
 
     if(val == 0x62 || val == 0x7b) return 'TFTP';
+
+    return 'notIdentified';
 
 }
 
