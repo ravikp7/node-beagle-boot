@@ -58,6 +58,7 @@ The returned EventEmitter instance emits following events:
 ```
 * `done`: An event emitted after process success which passes nothing.
 * `error`: An error event which passes error.
+* `disconnect`: An event reporting unexpected device disconnect which passes type of device `(ROM, SPL, UMS)` disconnected.
 
 ### Example
 ___
@@ -77,11 +78,20 @@ ums.on('done', function(){
 ums.on('error', function(error){
     console.log('Error: '+error);
 });
+
+ums.on('disconnect', function(device){
+    console.log(device + ' device got disconnected');
+});
 ```
 
-### Steps before running this module:
-* Connect BB through usb by holding down S2 (boot button).
+### Steps for using this module:
+* Run the server using above example or from this module's root directory run
+```
+sudo npm start
+```
+The server should be running now.
+* Connect BB through usb by holding down S2 (boot button) to begin the process.
 
-It should now boot BB into usb mass storage mode.
+It should now boot BB into USB Mass Storage Mode.
 
 
