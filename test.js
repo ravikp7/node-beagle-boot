@@ -13,3 +13,7 @@ ums.on('done', function(){
 ums.on('error', function(error){
     console.log('Error: '+error);
 });
+
+ums.on('disconnect', function(device){
+    console.log(device + ' device got disconnected');
+});

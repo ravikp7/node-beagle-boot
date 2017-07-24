@@ -38,7 +38,7 @@ var path = require('path');
 var os = require('os');
 var platform = os.platform();
 var rndis_win = require('./src/rndis_win');
-var inEndpoint, outEndpoint, data, ether, rndis, eth2, ip, udp, bootreply;
+var inEndpoint, outEndpoint, Data, ether, rndis, eth2, ip, udp, bootreply, romDevice, splDevice, umsDevice;
 var emitterMod = new EventEmitter();    // Emitter for module status
 var percent;    // Percentage for progress
 var description;    // Description for current status
@@ -51,14 +51,32 @@ exports.usbMassStorage = function(){
     // Connect to BeagleBone
     usb.on('attach', function(device){
 
-        if(device === usb.findByIds(ROMVID, ROMPID))
+        if(device === usb.findByIds(ROMVID, ROMPID)){
             transfer('spl', device, 0x02);
+            romDevice = device;
+        }
 
-        if(device === usb.findByIds(SPLVID, SPLPID))
+        if(device === usb.findByIds(SPLVID, SPLPID)){
             setTimeout(()=>{ transfer('uboot', device, 0x01); }, 1000);
+            splDevice = device;
+        }
 
-        if(device === usb.findByIds(UMSVID, UMSPID))
+        if(device === usb.findByIds(UMSVID, UMSPID)){
             emitterMod.emit('progress', {description: 'Ready for Flashing!', complete: 100});
+            umsDevice = device;
+        }
+    });
+
+    usb.on('detach', function(device){       
+
+        if(device === romDevice && percent < 40)
+            emitterMod.emit('disconnect', 'ROM');
+
+        if(device === splDevice && percent < 85)
+            emitterMod.emit('disconnect', 'SPL');
+        
+        if(device === umsDevice)
+            emitterMod.emit('disconnect', 'UMS');
     });
 
     return emitterMod;
@@ -75,9 +93,9 @@ function transfer(file, device, outEnd){
 
     if(file == 'uboot' && platform != 'linux'){
         device.open(false);
-        device.setConfiguration(2, function(err){console.log("Error");});
-        _device.__open();
-        _device.__claimInterface(0);
+        device.setConfiguration(2, function(err){console.log(err);});
+        device.__open();
+        device.__claimInterface(0);
     }
 
     device.open();
@@ -160,172 +178,66 @@ function transfer(file, device, outEnd){
     inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
     outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 
-    emitter.emit('getBOOTP', file);
+    emitter.emit('inTransfer', file);
 }
 
 
 
-// Event for receiving BOOTP
-emitter.on('getBOOTP', function(file){
-
-    var bootp_buf = Buffer.alloc(MAXBUF-rndisSize);     // Buffer for InEnd transfer
+// Event for inEnd transfer
+emitter.on('inTransfer', function(file){
 
     inEndpoint.transfer(MAXBUF, function(error, data){
 
-        if(!error){
-            description = 'BOOTP received';
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
-
-            if(file == 'spl'){
-
-                data.copy(bootp_buf, 0, rndisSize, MAXBUF);
-
-                ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
-
-                rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
-
-                eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
-
-                ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
-
-                udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
-
-                bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
-
-                buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
-
-            }
-
-            else{
-
-                var udpUboot_buf = Buffer.alloc(udpSize);
-                
-                var spl_bootp_buf = Buffer.alloc(bootpSize);
-
-                data.copy(udpUboot_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
-
-                data.copy(spl_bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);  
-
-                var udpUboot = protocols.parse_udp(udpUboot_buf);       // parsed udp header
-
-                var spl_bootp = protocols.parse_bootp(spl_bootp_buf);   // parsed bootp header
-
-                rndis = protocols.make_rndis(fullSize - rndisSize);
-
-                eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
-
-                ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
-
-                udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
-
-                bootreply = protocols.make_bootp(servername, file_uboot, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
-
-                buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
-            }
-        
-            emitter.emit('sendBOOTP', file, buff);
-        }
-
-        else emitterMod.emit('error', "ERROR receiving BOOTP "+ error);    
-    });
-});
-
-
-
-// Event for sending BOOTP reply
-emitter.on('sendBOOTP', function(file, data){
-
-    outEndpoint.transfer(data, function(error){
-        if(!error){
-            description = "BOOTP reply done";
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
-
-            emitter.emit('getARP', file);
-        }
-        else emitterMod.emit('error', "ERROR sending BOOTP "+ error);  
-    });
-
-});
-
-
-
-// Event for receiving ARP request
-emitter.on('getARP', function(file){
-
-    inEndpoint.transfer(MAXBUF, function(error, data){
-
-        if(!error){
-
-            description = 'ARP request received';
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
-
-            var arp_buf = Buffer.alloc(arp_Size);
-
-            data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
-        
-            receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
-
-            // ARP response
-            var arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
-
-            rndis = protocols.make_rndis(etherSize + arp_Size);
-
-            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
-
-            buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
-
-            emitter.emit('sendARP', file, buff);
-        }
-        else emitterMod.emit('error', "ERROR receiving ARP request "+ error);  
-    });
-
-});
-
-// Event for sending ARP response
-emitter.on('sendARP', function(file, data){
-
-    outEndpoint.transfer(data, function(error){
-
-        if(!error){
-
-            description = 'ARP response sent';
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
-
-            emitter.emit('getTFTP', file);
-        }
-        else emitterMod.emit('error', "ERROR sending ARP request "+ error);  
-
-    });
-});
-
-
-// Event for receiving SPL TFTP request
-emitter.on('getTFTP', function(file){
-
-    inEndpoint.transfer(MAXBUF, function(error, data){
-
-        if(!error){
-
-            var udpSPL_buf = Buffer.alloc(udpSize);
-
-            data.copy(udpSPL_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
+        if(!error){           
+            var request = identifyRequest(data);
             
-            udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
+            if(request === 'notIdentified') emitter.emit('inTransfer', file);
 
-            description = 'TFTP request received';
-            emitterMod.emit('progress', {description: description, complete: percent});
+            else {
+
+                emitterMod.emit('progress', {description: request + " request received", complete: percent});
+                percent += 5;
+
+                if(request == 'BOOTP') Data = processBOOTP(file, data);
+
+                if(request == 'ARP') Data = processARP(data);
+
+                if(request == 'TFTP') {               
+                    Data = processTFTP(data);
+                    emitter.emit('sendFile', file);
+                }
+
+                else emitter.emit('outTransfer', file, Data, request);
+            }
+        }
+
+        else {
+            emitterMod.emit('error', "ERROR in inTransfer");
+            console.log(error);
+        }
+    });
+});
+
+
+// Event for outEnd Transfer
+emitter.on('outTransfer', function(file, data, request){
+
+    outEndpoint.transfer(data, function(error){
+        
+        if(!error){
+            emitterMod.emit('progress', {description: request + " reply done", complete: percent});
             percent += 5;
 
-            emitter.emit('sendFile', file);
+            emitter.emit('inTransfer', file);
         }
-        else emitterMod.emit('error', "ERROR receiving TFTP request "+ error);  
+        else {
+            emitterMod.emit('error', "ERROR sending " + request);
+            console.log(error);
+        }  
     });
-
+    
 });
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////// File Transfer ////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -374,3 +286,104 @@ emitter.on('sendFile', function(file){
         else emitterMod.emit('error', "Error reading "+file+" : "+error);
     });
 });
+
+// Function to identify request packet
+function identifyRequest(buff){
+    var val = buff[4];
+
+    if(val == 0xc2 || val == 0x6c) return 'BOOTP';
+
+    if(val == 0x56) return 'ARP';
+
+    if(val == 0x62 || val == 0x7b) return 'TFTP';
+
+    return 'notIdentified';
+
+}
+
+// Function to process BOOTP request
+function processBOOTP(file, data){
+
+    var bootp_buf = Buffer.alloc(MAXBUF-rndisSize); 
+
+    if(file == 'spl'){
+
+        data.copy(bootp_buf, 0, rndisSize, MAXBUF);
+
+        ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
+
+        rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
+
+        eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
+
+        ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
+
+        udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
+
+        bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
+
+        buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
+
+    }
+
+    else{
+
+        var udpUboot_buf = Buffer.alloc(udpSize);
+                
+        var spl_bootp_buf = Buffer.alloc(bootpSize);
+
+        data.copy(udpUboot_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
+
+        data.copy(spl_bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);  
+
+        var udpUboot = protocols.parse_udp(udpUboot_buf);       // parsed udp header
+
+        var spl_bootp = protocols.parse_bootp(spl_bootp_buf);   // parsed bootp header
+
+        rndis = protocols.make_rndis(fullSize - rndisSize);
+
+        eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
+
+        ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
+
+        udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
+
+        bootreply = protocols.make_bootp(servername, file_uboot, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
+
+        buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
+    }
+
+    return buff;
+}
+
+// Function to process ARP request
+function processARP(data){
+
+    var arp_buf = Buffer.alloc(arp_Size);
+
+    data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
+        
+    receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
+
+    // ARP response
+    var arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
+
+    rndis = protocols.make_rndis(etherSize + arp_Size);
+
+    eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
+
+    buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
+
+    return buff;
+}
+
+// Function to process TFTP request
+function processTFTP(data){
+
+    var udpSPL_buf = Buffer.alloc(udpSize);
+
+    data.copy(udpSPL_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
+            
+    udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
+
+}
