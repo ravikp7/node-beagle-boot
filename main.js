@@ -86,7 +86,8 @@ exports.usbMassStorage = function(){
 // Function for device initialization
 function transfer(file, device, outEnd){
     if(file === 'spl') percent = 0;
-
+    i = 1;          // Keeps count of File Blocks transferred
+    blocks = 2;     // Number of blocks of file, assigned greater than i here
     description = file+" =>";
     emitterMod.emit('progress', {description: description, complete: percent});
     percent += 5;
@@ -191,23 +192,34 @@ emitter.on('inTransfer', function(file){
         if(!error){           
             var request = identifyRequest(data);
             
-            if(request === 'notIdentified') emitter.emit('inTransfer', file);
+            if(request == 'notIdentified') emitter.emit('inTransfer', file);
 
             else {
-
-                emitterMod.emit('progress', {description: request + " request received", complete: percent});
-                percent += 5;
 
                 if(request == 'BOOTP') Data = processBOOTP(file, data);
 
                 if(request == 'ARP') Data = processARP(data);
 
-                if(request == 'TFTP') {               
-                    Data = processTFTP(data);
-                    emitter.emit('sendFile', file);
+                if(request == 'TFTP_Data') Data = processTFTP_Data();
+                else{    
+                    emitterMod.emit('progress', {description: request + " request received", complete: percent});
+                    percent += 5;
                 }
 
-                else emitter.emit('outTransfer', file, Data, request);
+                if(request == 'TFTP') {
+                    emitterMod.emit('progress', {description: file+" transfer starts", complete: percent});
+                    percent += 5;
+
+                    emitter.emit('processTFTP', data, file);
+                }
+
+                else if(i <= blocks+1){     // Transfer until all blocks of file are transferred
+                        emitter.emit('outTransfer', file, Data, request);
+                    }
+                    else{
+                        emitterMod.emit('progress', {description: file+" transfer complete", complete: percent});
+                        percent += 5;
+                    }
             }
         }
 
@@ -225,8 +237,10 @@ emitter.on('outTransfer', function(file, data, request){
     outEndpoint.transfer(data, function(error){
         
         if(!error){
-            emitterMod.emit('progress', {description: request + " reply done", complete: percent});
-            percent += 5;
+            if(request == 'BOOTP' || request == 'ARP'){
+                emitterMod.emit('progress', {description: request + " reply done", complete: percent});
+                percent += 5;
+            }
 
             emitter.emit('inTransfer', file);
         }
@@ -238,54 +252,6 @@ emitter.on('outTransfer', function(file, data, request){
     
 });
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////// File Transfer ////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-emitter.on('sendFile', function(file){
-    description = file+" transfer starts";
-    emitterMod.emit('progress', {description: description, complete: percent});
-    percent += 5;
-
-    fs.readFile(path.join(__dirname, "bin", file), function(error, data){
-    
-        if(!error){
-    
-            var blocks = Math.ceil(data.length/512);         // Total number of blocks of file
-
-            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    
-
-            var start = 0;                                  // Source start for copy
-
-            for(var i=1; i<=blocks; i++){                   // i is block number
-                
-                var blk_size = (i==blocks)? data.length - (blocks-1)*512 : 512;  // Different block size for last block
-
-                var blk_data = Buffer.alloc(blk_size);
-                data.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
-                start += blk_size; 
-
-                rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
-                ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
-                udp = protocols.make_udp(tftpSize + blk_size, udpSPL.udpDest, udpSPL.udpSrc);
-                tftp = protocols.make_tftp(3, i);
-
-                var file_data = Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
-
-                // Send SPL file data
-                outEndpoint.transfer(file_data, function(error){});
-
-                // Receive buffer back
-                inEndpoint.transfer(MAXBUF, function(error, data){});
-                
-            }
-
-            description = file+" transfer complete";
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
-        }
-        else emitterMod.emit('error', "Error reading "+file+" : "+error);
-    });
-});
 
 // Function to identify request packet
 function identifyRequest(buff){
@@ -380,7 +346,7 @@ function processARP(data){
 }
 
 // Function to process TFTP request
-function processTFTP(data){
+emitter.on('processTFTP', function(data, file){
 
     var udpSPL_buf = Buffer.alloc(udpSize);
 
@@ -388,4 +354,33 @@ function processTFTP(data){
             
     udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
 
+    fs.readFile(path.join(__dirname, "bin", file), function(error, file_data){
+        if(!error){
+            fileData = file_data;
+            blocks = Math.ceil(fileData.length/512);         // Total number of blocks of file
+            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
+            start = 0;
+            emitter.emit('outTransfer', file, processTFTP_Data(), undefined);
+        }
+        
+        else emitterMod.emit('error', "Error reading "+file+" : "+error);
+    });
+
+});
+
+// Function to process File data for TFTP
+function processTFTP_Data(){
+
+    var blk_size = (i==blocks)? fileData.length - (blocks-1)*512 : 512;  // Different block size for last block
+
+    var blk_data = Buffer.alloc(blk_size);
+    fileData.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
+    start += blk_size; 
+
+    rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
+    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
+    udp = protocols.make_udp(tftpSize + blk_size, udpSPL.udpDest, udpSPL.udpSrc);
+    tftp = protocols.make_tftp(3, i);
+    i++;
+    return Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
 }
