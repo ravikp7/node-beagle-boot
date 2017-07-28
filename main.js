@@ -297,6 +297,8 @@ function identifyRequest(buff){
 
     if(val == 0x62 || val == 0x7b) return 'TFTP';
 
+    if(val == 0x5a) return 'TFTP_Data';
+
     return 'notIdentified';
 
 }
