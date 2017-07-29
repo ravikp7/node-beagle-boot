@@ -12,8 +12,6 @@ const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
 const server_ip = [0xc0, 0xa8, 0x01, 0x09];     // 192.168.1.9
 const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
 const servername = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84];       // ASCII ['B','E','A','G','L','E','B','O','O','T']
-const file_spl = [83, 80, 76, 0, 0];                             // ASCII ['S','P','L']
-const file_uboot = [85, 66, 79, 79, 84];                           // ASCII ['U','B','O','O','T']
 const UMSVID = 0x0451;
 const UMSPID = 0xd022;
 
@@ -298,9 +296,7 @@ function processBOOTP(file, data){
 
     udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
 
-    var filename = (file == 'spl')? file_spl: file_uboot;
-
-    bootreply = protocols.make_bootp(servername, filename, bootp.xid, ether.h_source, BB_ip, server_ip);
+    bootreply = protocols.make_bootp(servername, file, bootp.xid, ether.h_source, BB_ip, server_ip);
 
     buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
     

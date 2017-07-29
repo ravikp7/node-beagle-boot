@@ -87,7 +87,7 @@ var bootp_servername = sp.build([
     { pad: 'string'}
 ]);
 var bootp_bootfile = sp.build([
-    { bootfile: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8'}},   // Name of File to boot
+    { bootfile: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8', 5:'uint8', 6:'uint8', 7:'uint8', 8:'uint8'}},   // Name of File to boot
     { pad: 'string'}
 ]);
 // Max array size supported is 9, splitting vendor field in two parts
@@ -334,7 +334,7 @@ function make_bootp(server_name, file_name, xid_, hw_dest, BB_ip, serverIP){
         { hwaddr: hw_dest}
     ];
     var servername = [ { servername: server_name} ];
-    var bootfile = [ { bootfile: file_name} ];
+    var bootfile = [ { bootfile: stringToAscii(file_name)} ];
     var vendor1 = [ { vendor1: [ 99, 130, 83, 99, 1, 4, 255, 255, 255] } ];
     var vendor2 = [ { vendor2: [ 0, 3, 4, 192, 168, 1, 9, 0xFF] } ];
     var buf1 = fix_buff(bootp1.encode(bootp_1));
@@ -343,7 +343,7 @@ function make_bootp(server_name, file_name, xid_, hw_dest, BB_ip, serverIP){
     var buf3 = fix_buff(bootp_servername.encode(servername));
     var buf3_ = Buffer.alloc(54);           // Remaining 54 bytes out of 64 of servername
     var buf4 = fix_buff(bootp_bootfile.encode(bootfile));
-    var buf4_ = Buffer.alloc(123);          // Remaining 123 bytes out of 128 of bootfile
+    var buf4_ = Buffer.alloc(119);          // Remaining 119 bytes out of 128 of bootfile
     var buf5 = fix_buff(bootp_vendor1.encode(vendor1));
     var buf5_ = fix_buff(bootp_vendor2.encode(vendor2));
     var buf5__ = Buffer.alloc(47);           // Remaining 47 bytes out of 64 of vendor
@@ -351,6 +351,14 @@ function make_bootp(server_name, file_name, xid_, hw_dest, BB_ip, serverIP){
 
 }
 
+function stringToAscii(filename){
+    var x = 0;
+    var file_name = [];
+    while(x <= 9){
+        x = file_name.push((x < filename.length)? filename.charCodeAt(x): 0);
+    }
+    return file_name;
+}
 
 // Function for ARP response
 function make_arp(opcode, hw_source, ip_source, hw_dest, ip_dest){
