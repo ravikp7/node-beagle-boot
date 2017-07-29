@@ -16,28 +16,28 @@ const UMSVID = 0x0451;
 const UMSPID = 0xd022;
 
 // Size of all packets
-var rndisSize = 44;
-var etherSize = 14;
-var arp_Size = 28;
-var ipSize = 20;
-var udpSize = 8;
-var bootpSize = 300;
-var tftpSize = 4;
-var fullSize = 386;
+const rndisSize = 44;
+const etherSize = 14;
+const arp_Size = 28;
+const ipSize = 20;
+const udpSize = 8;
+const bootpSize = 300;
+const tftpSize = 4;
+const fullSize = 386;
 
 
 // Include modules
-var usb = require('usb');
-var protocols = require('./src/protocols');
-var EventEmitter = require('events').EventEmitter;
-var emitter = new EventEmitter();
-var fs = require('fs');
-var path = require('path');
-var os = require('os');
-var platform = os.platform();
-var rndis_win = require('./src/rndis_win');
+const usb = require('usb');
+const protocols = require('./src/protocols');
+const EventEmitter = require('events').EventEmitter;
+const emitter = new EventEmitter();
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const platform = os.platform();
+const rndis_win = require('./src/rndis_win');
 var inEndpoint, outEndpoint, Data, ether, rndis, eth2, ip, udp, bootreply, romDevice, splDevice, umsDevice;
-var emitterMod = new EventEmitter();    // Emitter for module status
+const emitterMod = new EventEmitter();    // Emitter for module status
 var percent;    // Percentage for progress
 var description;    // Description for current status
 
