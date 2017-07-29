@@ -272,55 +272,38 @@ function identifyRequest(buff){
 // Function to process BOOTP request
 function processBOOTP(file, data){
 
-    var bootp_buf = Buffer.alloc(MAXBUF-rndisSize); 
+    var ether_buf = Buffer.alloc(MAXBUF-rndisSize); 
 
-    if(file == 'spl'){
-
-        data.copy(bootp_buf, 0, rndisSize, MAXBUF);
-
-        ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
-
-        rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
-
-        eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
-
-        ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
-
-        udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
-
-        bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
-
-        buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
-
-    }
-
-    else{
-
-        var udpUboot_buf = Buffer.alloc(udpSize);
+    var udp_buf = Buffer.alloc(udpSize);
                 
-        var spl_bootp_buf = Buffer.alloc(bootpSize);
+    var bootp_buf = Buffer.alloc(bootpSize);
 
-        data.copy(udpUboot_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
+    data.copy(udp_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
 
-        data.copy(spl_bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);  
+    data.copy(bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);
+        
+    data.copy(ether_buf, 0, rndisSize, MAXBUF);
 
-        var udpUboot = protocols.parse_udp(udpUboot_buf);       // parsed udp header
+    ether = protocols.decode_ether(ether_buf);      // Gets decoded ether packet data
 
-        var spl_bootp = protocols.parse_bootp(spl_bootp_buf);   // parsed bootp header
+    var udpUboot = protocols.parse_udp(udp_buf);       // parsed udp header
 
-        rndis = protocols.make_rndis(fullSize - rndisSize);
+    var spl_bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
 
-        eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
+    rndis = protocols.make_rndis(fullSize - rndisSize);
 
-        ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
+    eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
 
-        udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
+    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
 
-        bootreply = protocols.make_bootp(servername, file_uboot, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
+    udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
 
-        buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
-    }
+    var filename = (file == 'spl')? file_spl: file_uboot;
 
+    bootreply = protocols.make_bootp(servername, filename, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
+
+    buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
+    
     return buff;
 }
 
