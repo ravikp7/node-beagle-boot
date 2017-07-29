@@ -50,12 +50,12 @@ exports.usbMassStorage = function(){
     usb.on('attach', function(device){
 
         if(device === usb.findByIds(ROMVID, ROMPID)){
-            transfer('spl', device);
+            transfer(path.join(__dirname, 'bin', 'spl'), device);
             romDevice = device;
         }
 
         if(device === usb.findByIds(SPLVID, SPLPID)){
-            setTimeout(()=>{ transfer('uboot', device); }, 1000);
+            setTimeout(()=>{ transfer(path.join(__dirname, 'bin', 'uboot'), device); }, 1000);
             splDevice = device;
         }
 
@@ -82,15 +82,15 @@ exports.usbMassStorage = function(){
 
 
 // Function for device initialization
-function transfer(file, device){
-    if(file === 'spl') percent = 0;
+function transfer(filePath, device){
+    if(path.basename(filePath) === 'spl') percent = 0;
     i = 1;          // Keeps count of File Blocks transferred
     blocks = 2;     // Number of blocks of file, assigned greater than i here
-    description = file+" =>";
+    description = path.basename(filePath)+" =>";
     emitterMod.emit('progress', {description: description, complete: percent});
     percent += 5;
 
-    if(file == 'uboot' && platform != 'linux'){
+    if(path.basename(filePath) != 'spl' && platform != 'linux'){
         device.open(false);
         device.setConfiguration(2, function(err){if(err) console.log(err);});
         device.__open();
@@ -177,24 +177,24 @@ function transfer(file, device){
     inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
     outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 
-    emitter.emit('inTransfer', file);
+    emitter.emit('inTransfer', filePath);
 }
 
 
 
 // Event for inEnd transfer
-emitter.on('inTransfer', function(file){
+emitter.on('inTransfer', function(filePath){
 
     inEndpoint.transfer(MAXBUF, function(error, data){
         
         if(!error){           
             var request = identifyRequest(data);
             
-            if(request == 'notIdentified') emitter.emit('inTransfer', file);
+            if(request == 'notIdentified') emitter.emit('inTransfer', filePath);
 
             else {
 
-                if(request == 'BOOTP') Data = processBOOTP(file, data);
+                if(request == 'BOOTP') Data = processBOOTP(filePath, data);
 
                 if(request == 'ARP') Data = processARP(data);
 
@@ -205,17 +205,17 @@ emitter.on('inTransfer', function(file){
                 }
 
                 if(request == 'TFTP') {
-                    emitterMod.emit('progress', {description: file+" transfer starts", complete: percent});
+                    emitterMod.emit('progress', {description: path.basename(filePath)+" transfer starts", complete: percent});
                     percent += 5;
 
-                    emitter.emit('processTFTP', data, file);
+                    emitter.emit('processTFTP', data, filePath);
                 }
 
                 else if(i <= blocks+1){     // Transfer until all blocks of file are transferred
-                        emitter.emit('outTransfer', file, Data, request);
+                        emitter.emit('outTransfer', filePath, Data, request);
                     }
                     else{
-                        emitterMod.emit('progress', {description: file+" transfer complete", complete: percent});
+                        emitterMod.emit('progress', {description: path.basename(filePath)+" transfer complete", complete: percent});
                         percent += 5;
                     }
             }
@@ -230,7 +230,7 @@ emitter.on('inTransfer', function(file){
 
 
 // Event for outEnd Transfer
-emitter.on('outTransfer', function(file, data, request){
+emitter.on('outTransfer', function(filePath, data, request){
 
     outEndpoint.transfer(data, function(error){
         
@@ -240,7 +240,7 @@ emitter.on('outTransfer', function(file, data, request){
                 percent += 5;
             }
 
-            emitter.emit('inTransfer', file);
+            emitter.emit('inTransfer', filePath);
         }
         else {
             emitterMod.emit('error', "ERROR sending " + request);
@@ -268,7 +268,7 @@ function identifyRequest(buff){
 }
 
 // Function to process BOOTP request
-function processBOOTP(file, data){
+function processBOOTP(filePath, data){
 
     var ether_buf = Buffer.alloc(MAXBUF-rndisSize); 
 
@@ -296,7 +296,7 @@ function processBOOTP(file, data){
 
     udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
 
-    bootreply = protocols.make_bootp(servername, file, bootp.xid, ether.h_source, BB_ip, server_ip);
+    bootreply = protocols.make_bootp(servername, path.basename(filePath), bootp.xid, ether.h_source, BB_ip, server_ip);
 
     buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
     
@@ -325,7 +325,7 @@ function processARP(data){
 }
 
 // Function to process TFTP request
-emitter.on('processTFTP', function(data, file){
+emitter.on('processTFTP', function(data, filePath){
 
     var udpSPL_buf = Buffer.alloc(udpSize);
 
@@ -333,16 +333,16 @@ emitter.on('processTFTP', function(data, file){
             
     udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
 
-    fs.readFile(path.join(__dirname, "bin", file), function(error, file_data){
+    fs.readFile(filePath, function(error, file_data){
         if(!error){
             fileData = file_data;
             blocks = Math.ceil(fileData.length/512);         // Total number of blocks of file
             eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
             start = 0;
-            emitter.emit('outTransfer', file, processTFTP_Data(), undefined);
+            emitter.emit('outTransfer', filePath, processTFTP_Data(), undefined);
         }
         
-        else emitterMod.emit('error', "Error reading "+file+" : "+error);
+        else emitterMod.emit('error', "Error reading "+path.basename(filePath)+" : "+error);
     });
 
 });
