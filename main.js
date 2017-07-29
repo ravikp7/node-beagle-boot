@@ -288,7 +288,7 @@ function processBOOTP(file, data){
 
     var udpUboot = protocols.parse_udp(udp_buf);       // parsed udp header
 
-    var spl_bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
+    var bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
 
     rndis = protocols.make_rndis(fullSize - rndisSize);
 
@@ -300,7 +300,7 @@ function processBOOTP(file, data){
 
     var filename = (file == 'spl')? file_spl: file_uboot;
 
-    bootreply = protocols.make_bootp(servername, filename, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
+    bootreply = protocols.make_bootp(servername, filename, bootp.xid, ether.h_source, BB_ip, server_ip);
 
     buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
     
