@@ -52,12 +52,12 @@ exports.usbMassStorage = function(){
     usb.on('attach', function(device){
 
         if(device === usb.findByIds(ROMVID, ROMPID)){
-            transfer('spl', device, 0x02);
+            transfer('spl', device);
             romDevice = device;
         }
 
         if(device === usb.findByIds(SPLVID, SPLPID)){
-            setTimeout(()=>{ transfer('uboot', device, 0x01); }, 1000);
+            setTimeout(()=>{ transfer('uboot', device); }, 1000);
             splDevice = device;
         }
 
@@ -84,7 +84,7 @@ exports.usbMassStorage = function(){
 
 
 // Function for device initialization
-function transfer(file, device, outEnd){
+function transfer(file, device){
     if(file === 'spl') percent = 0;
     i = 1;          // Keeps count of File Blocks transferred
     blocks = 2;     // Number of blocks of file, assigned greater than i here
@@ -172,8 +172,8 @@ function transfer(file, device, outEnd){
     }                      
 
     // Set endpoints for usb transfer
-    inEndpoint = interface.endpoint(0x81);
-    outEndpoint = interface.endpoint(outEnd);
+    inEndpoint = interface.endpoint(interface.endpoints[0].address);
+    outEndpoint = interface.endpoint(interface.endpoints[1].address);
 
     // Set endpoint transfer type
     inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
