@@ -74,14 +74,14 @@ exports.tftpServer = function(transferFiles){
             case usb.findByIds(UBOOTVID, UBOOTPID): foundDevice = 'UBOOT';
             break;
 
-            case usb.findByIds(UMSVID, UMSPID): {
-                foundDevice = 'UMS';
-                emitterMod.emit('progress',{description: 'Ready for Flashing!', complete: 100});
-            }
+            case usb.findByIds(UMSVID, UMSPID): foundDevice = 'UMS';
             break;
 
             default: foundDevice = 'Device';
         }
+
+        emitterMod.emit('connect', foundDevice);
+
         increment = Math.ceil(100 / (transferFiles.length * 10));
         // Transfer files
         transferFiles.forEach(function(entry){

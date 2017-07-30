@@ -14,6 +14,10 @@ emitter.on('error', function(error){
     console.log('Error: '+error);
 });
 
+emitter.on('connect', function(device){
+    if(device === 'UMS') console.log('Ready for Flashing!');
+});
+
 emitter.on('disconnect', function(device){
     console.log(device + ' device got disconnected');
 });
