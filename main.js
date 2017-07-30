@@ -38,7 +38,7 @@ const path = require('path');
 const os = require('os');
 const platform = os.platform();
 const rndis_win = require('./src/rndis_win');
-var inEndpoint, outEndpoint, Data, ether, rndis, eth2, ip, udp, bootreply, romDevice, splDevice, umsDevice;
+var inEndpoint, outEndpoint, Data, ether, rndis, eth2, ip, udp, bootreply, increment;
 const emitterMod = new EventEmitter();    // Emitter for module status
 var percent;    // Percentage for progress
 var description;    // Description for current status
@@ -82,7 +82,7 @@ exports.tftpServer = function(transferFiles){
 
             default: foundDevice = 'Device';
         }
-
+        increment = Math.ceil(100 / (transferFiles.length * 10));
         // Transfer files
         transferFiles.forEach(function(entry){
 
@@ -106,7 +106,7 @@ function transfer(filePath, device){
     blocks = 2;     // Number of blocks of file, assigned greater than i here
     description = path.basename(filePath)+" =>";
     emitterMod.emit('progress', {description: description, complete: percent});
-    percent += 5;
+    percent += increment;
 
     if(path.basename(filePath) != 'spl' && platform != 'linux'){
         device.open(false);
@@ -138,7 +138,7 @@ function transfer(filePath, device){
 
     description = "Interface claimed";
     emitterMod.emit('progress', {description: description, complete: percent});
-    percent += 5;
+    percent += increment;
 
     // Code to initialize RNDIS device on Windows and OSX
     if(platform != 'linux' && file == 'spl'){
@@ -219,12 +219,12 @@ emitter.on('inTransfer', function(filePath){
                 if(request == 'TFTP_Data') Data = processTFTP_Data();
                 else{    
                     emitterMod.emit('progress', {description: request + " request received", complete: percent});
-                    percent += 5;
+                    percent += increment;
                 }
 
                 if(request == 'TFTP') {
                     emitterMod.emit('progress', {description: path.basename(filePath)+" transfer starts", complete: percent});
-                    percent += 5;
+                    percent += increment;
 
                     emitter.emit('processTFTP', data, filePath);
                 }
@@ -234,7 +234,7 @@ emitter.on('inTransfer', function(filePath){
                     }
                     else{
                         emitterMod.emit('progress', {description: path.basename(filePath)+" transfer complete", complete: percent});
-                        percent += 5;
+                        percent += increment;
                     }
             }
         }
@@ -255,7 +255,7 @@ emitter.on('outTransfer', function(filePath, data, request){
         if(!error){
             if(request == 'BOOTP' || request == 'ARP'){
                 emitterMod.emit('progress', {description: request + " reply done", complete: percent});
-                percent += 5;
+                percent += increment;
             }
 
             emitter.emit('inTransfer', filePath);
