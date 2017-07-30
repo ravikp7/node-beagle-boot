@@ -50,8 +50,8 @@ exports.usbMassStorage = function(){
     usb.on('attach', function(device){
 
         if(device === usb.findByIds(ROMVID, ROMPID)){
-            transfer(path.join(__dirname, 'bin', 'spl'), device);
             romDevice = device;
+            transfer(path.join(__dirname, 'bin', 'spl'), device);
         }
 
         if(device === usb.findByIds(SPLVID, SPLPID)){
@@ -83,7 +83,7 @@ exports.usbMassStorage = function(){
 
 // Function for device initialization
 function transfer(filePath, device){
-    if(path.basename(filePath) === 'spl') percent = 0;
+    if(device === romDevice) percent = 0;
     i = 1;          // Keeps count of File Blocks transferred
     blocks = 2;     // Number of blocks of file, assigned greater than i here
     description = path.basename(filePath)+" =>";
