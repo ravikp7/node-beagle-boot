@@ -14,6 +14,8 @@ const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
 const servername = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84];       // ASCII ['B','E','A','G','L','E','B','O','O','T']
 const UMSVID = 0x0451;
 const UMSPID = 0xd022;
+const UBOOTVID = 0x0525;
+const UBOOTPID = 0xa4a5;
 
 // Size of all packets
 const rndisSize = 44;
@@ -80,6 +82,45 @@ exports.usbMassStorage = function(){
 
 // Event Emitter for progress
 exports.eventEmitter = emitterMod;
+
+
+// TFTP server for any file transfer
+exports.tftpServer = function(transferFiles){
+
+    var foundDevice;
+
+    usb.on('attach', function(device){
+
+        switch(device){
+            case usb.findByIds(ROMVID, ROMPID): foundDevice = 'ROM';
+            break;
+
+            case usb.findByIds(SPLVID, SPLPID): foundDevice = 'SPL';
+            break;
+
+            case usb.findByIds(UBOOTVID, UBOOTPID): foundDevice = 'UBOOT';
+            break;
+
+            case usb.findByIds(UMSVID, UMSPID): foundDevice = 'UMS';
+            break;
+
+            default: foundDevice = 'Device';
+        }
+
+        // Transfer files
+        transferFiles.forEach(function(entry){
+
+            if(device === usb.findByIds(entry.vid, entry.pid)){ 
+                transfer(entry.file_path, device);
+            }   
+        });
+    });
+
+    usb.on('detach', function(device){
+
+        emitterMod.emit('disconnect', foundDevice);
+    });
+}
 
 
 // Function for device initialization
