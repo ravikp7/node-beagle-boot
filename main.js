@@ -188,7 +188,7 @@ emitter.on('inTransfer', function(filePath){
     inEndpoint.transfer(MAXBUF, function(error, data){
         
         if(!error){           
-            var request = identifyRequest(data);
+            var request = identifyRequest(data, path.basename(filePath).length);
             
             if(request == 'notIdentified') emitter.emit('inTransfer', filePath);
 
@@ -252,17 +252,17 @@ emitter.on('outTransfer', function(filePath, data, request){
 
 
 // Function to identify request packet
-function identifyRequest(buff){
+function identifyRequest(buff, len){
     var val = buff[4];
 
     if(val == 0xc2 || val == 0x6c) return 'BOOTP';
 
     if(val == 0x56) return 'ARP';
 
-    if(val == 0x62 || val == 0x7b) return 'TFTP';
+    if(val == (0x5f + len) || val == (0x76 + len)) return 'TFTP';
 
     if(val == 0x5a) return 'TFTP_Data';
-
+    console.log(val);
     return 'notIdentified';
 
 }
