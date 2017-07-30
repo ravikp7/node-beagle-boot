@@ -47,37 +47,10 @@ var description;    // Description for current status
 //usb.setDebugLevel(4);   
 
 exports.usbMassStorage = function(){
-    
-    // Connect to BeagleBone
-    usb.on('attach', function(device){
-
-        if(device === usb.findByIds(ROMVID, ROMPID)){
-            romDevice = device;
-            transfer(path.join(__dirname, 'bin', 'spl'), device);
-        }
-
-        if(device === usb.findByIds(SPLVID, SPLPID)){
-            setTimeout(()=>{ transfer(path.join(__dirname, 'bin', 'uboot'), device); }, 1000);
-            splDevice = device;
-        }
-
-        if(device === usb.findByIds(UMSVID, UMSPID)){
-            emitterMod.emit('progress', {description: 'Ready for Flashing!', complete: 100});
-            umsDevice = device;
-        }
-    });
-
-    usb.on('detach', function(device){       
-
-        if(device === romDevice && percent < 40)
-            emitterMod.emit('disconnect', 'ROM');
-
-        if(device === splDevice && percent < 85)
-            emitterMod.emit('disconnect', 'SPL');
-        
-        if(device === umsDevice)
-            emitterMod.emit('disconnect', 'UMS');
-    });
+    exports.tftpServer([
+        {vid: ROMVID, pid: ROMPID, file_path: path.join(__dirname, 'bin', 'spl')},
+        {vid: SPLVID, pid: SPLPID, file_path: path.join(__dirname, 'bin', 'uboot')}
+    ]);
 };
 
 // Event Emitter for progress
@@ -101,7 +74,10 @@ exports.tftpServer = function(transferFiles){
             case usb.findByIds(UBOOTVID, UBOOTPID): foundDevice = 'UBOOT';
             break;
 
-            case usb.findByIds(UMSVID, UMSPID): foundDevice = 'UMS';
+            case usb.findByIds(UMSVID, UMSPID): {
+                foundDevice = 'UMS';
+                emitterMod.emit('progress',{description: 'Ready for Flashing!', complete: 100});
+            }
             break;
 
             default: foundDevice = 'Device';
@@ -120,12 +96,12 @@ exports.tftpServer = function(transferFiles){
 
         emitterMod.emit('disconnect', foundDevice);
     });
-}
+};
 
 
 // Function for device initialization
 function transfer(filePath, device){
-    if(device === romDevice) percent = 0;
+    if(device === usb.findByIds(ROMVID, ROMPID)) percent = 0;
     i = 1;          // Keeps count of File Blocks transferred
     blocks = 2;     // Number of blocks of file, assigned greater than i here
     description = path.basename(filePath)+" =>";
