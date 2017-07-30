@@ -1,19 +1,21 @@
 var BB = require('./main');
 
-var ums = BB.usbMassStorage();
+var emitter = BB.eventEmitter;
 
-ums.on('progress', function(status){
+emitter.on('progress', function(status){
     console.log(status);
 });
 
-ums.on('done', function(){
+emitter.on('done', function(){
     console.log('Select Image');
 });
 
-ums.on('error', function(error){
+emitter.on('error', function(error){
     console.log('Error: '+error);
 });
 
-ums.on('disconnect', function(device){
+emitter.on('disconnect', function(device){
     console.log(device + ' device got disconnected');
 });
+
+BB.usbMassStorage();

@@ -76,9 +76,10 @@ exports.usbMassStorage = function(){
         if(device === umsDevice)
             emitterMod.emit('disconnect', 'UMS');
     });
-
-    return emitterMod;
 };
+
+// Event Emitter for progress
+exports.eventEmitter = emitterMod;
 
 
 // Function for device initialization
