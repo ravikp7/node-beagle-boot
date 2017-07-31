@@ -1,13 +1,13 @@
 var BB = require('./main');
 
-var emitter = BB.eventEmitter;
+var emitter = BB.usbMassStorage();
 
 emitter.on('progress', function(status){
     console.log(status);
 });
 
 emitter.on('done', function(){
-    console.log('Select Image');
+    console.log('Transfer Complete');
 });
 
 emitter.on('error', function(error){
@@ -17,12 +17,6 @@ emitter.on('error', function(error){
 emitter.on('connect', function(device){
     if(device === 'UMS') console.log('Ready for Flashing!');
 });
-
-emitter.on('disconnect', function(device){
-    console.log(device + ' device got disconnected');
-});
-
-BB.usbMassStorage();
 
 /*
 Same function to trasnfer SPL and UBOOT for USB Mass Storage using the File Transfer API
