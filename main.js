@@ -85,7 +85,7 @@ exports.tftpServer = function(transferFiles){
 
             if(device === usb.findByIds(entry.vid, entry.pid)){ 
                 var timeout = (foundDevice == 'ROM')? 0: 500;
-                setTimeout(()=>{transfer(entry.file_path, device, foundDevice)}, timeout);
+                setTimeout(()=>{transfer(entry.file_path, device, foundDevice);}, timeout);
             }   
         });
     });
@@ -234,6 +234,7 @@ emitter.on('inTransfer', function(filePath){
                     }
                     else{
                         emitterMod.emit('progress', {description: path.basename(filePath)+" transfer complete", complete: +percent.toFixed(2)});
+                        if(+percent.toFixed(2) == 100) emitterMod.emit('done');     // Emitted on completion
                         percent += increment;
                     }
             }
