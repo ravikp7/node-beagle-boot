@@ -2,6 +2,9 @@ var BB = require('./main');
 
 var emitter = BB.usbMassStorage();
 
+console.log('Server started');
+console.log('Connect BeagleBone to get started');
+
 emitter.on('progress', function(status){
     console.log(status);
 });
