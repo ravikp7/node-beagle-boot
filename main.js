@@ -46,15 +46,13 @@ var description;    // Description for current status
 // Set usb debug log
 //usb.setDebugLevel(4);   
 
+// TFTP server for USB Mass Storage
 exports.usbMassStorage = function(){
-    exports.tftpServer([
+    return exports.tftpServer([
         {vid: ROMVID, pid: ROMPID, file_path: path.join(__dirname, 'bin', 'spl')},
         {vid: SPLVID, pid: SPLPID, file_path: path.join(__dirname, 'bin', 'uboot')}
     ]);
 };
-
-// Event Emitter for progress
-exports.eventEmitter = emitterMod;
 
 
 // TFTP server for any file transfer
@@ -96,6 +94,8 @@ exports.tftpServer = function(transferFiles){
 
         emitterMod.emit('disconnect', foundDevice);
     });
+
+    return emitterMod;  // Event Emitter for progress
 };
 
 
