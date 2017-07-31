@@ -61,7 +61,7 @@ exports.eventEmitter = emitterMod;
 exports.tftpServer = function(transferFiles){
 
     var foundDevice;
-
+    increment = (100 / (transferFiles.length * 9));
     usb.on('attach', function(device){
 
         switch(device){
@@ -82,7 +82,6 @@ exports.tftpServer = function(transferFiles){
 
         emitterMod.emit('connect', foundDevice);
 
-        increment = Math.ceil(100 / (transferFiles.length * 10));
         // Transfer files
         transferFiles.forEach(function(entry){
 
@@ -101,11 +100,11 @@ exports.tftpServer = function(transferFiles){
 
 // Function for device initialization
 function transfer(filePath, device){
-    if(device === usb.findByIds(ROMVID, ROMPID)) percent = 0;
+    if(device === usb.findByIds(ROMVID, ROMPID)) percent = increment;
     i = 1;          // Keeps count of File Blocks transferred
     blocks = 2;     // Number of blocks of file, assigned greater than i here
     description = path.basename(filePath)+" =>";
-    emitterMod.emit('progress', {description: description, complete: percent});
+    emitterMod.emit('progress', {description: description, complete: +percent.toFixed(2)});
     percent += increment;
 
     if(path.basename(filePath) != 'spl' && platform != 'linux'){
@@ -137,7 +136,7 @@ function transfer(filePath, device){
     }
 
     description = "Interface claimed";
-    emitterMod.emit('progress', {description: description, complete: percent});
+    emitterMod.emit('progress', {description: description, complete: +percent.toFixed(2)});
     percent += increment;
 
     // Code to initialize RNDIS device on Windows and OSX
@@ -218,12 +217,12 @@ emitter.on('inTransfer', function(filePath){
 
                 if(request == 'TFTP_Data') Data = processTFTP_Data();
                 else{    
-                    emitterMod.emit('progress', {description: request + " request received", complete: percent});
+                    emitterMod.emit('progress', {description: request + " request received", complete: +percent.toFixed(2)});
                     percent += increment;
                 }
 
                 if(request == 'TFTP') {
-                    emitterMod.emit('progress', {description: path.basename(filePath)+" transfer starts", complete: percent});
+                    emitterMod.emit('progress', {description: path.basename(filePath)+" transfer starts", complete: +percent.toFixed(2)});
                     percent += increment;
 
                     emitter.emit('processTFTP', data, filePath);
@@ -233,7 +232,7 @@ emitter.on('inTransfer', function(filePath){
                         emitter.emit('outTransfer', filePath, Data, request);
                     }
                     else{
-                        emitterMod.emit('progress', {description: path.basename(filePath)+" transfer complete", complete: percent});
+                        emitterMod.emit('progress', {description: path.basename(filePath)+" transfer complete", complete: +percent.toFixed(2)});
                         percent += increment;
                     }
             }
@@ -254,7 +253,7 @@ emitter.on('outTransfer', function(filePath, data, request){
         
         if(!error){
             if(request == 'BOOTP' || request == 'ARP'){
-                emitterMod.emit('progress', {description: request + " reply done", complete: percent});
+                emitterMod.emit('progress', {description: request + " reply done", complete: +percent.toFixed(2)});
                 percent += increment;
             }
 
