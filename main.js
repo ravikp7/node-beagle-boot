@@ -86,7 +86,7 @@ exports.tftpServer = function(transferFiles){
         transferFiles.forEach(function(entry){
 
             if(device === usb.findByIds(entry.vid, entry.pid)){ 
-                transfer(entry.file_path, device);
+                transfer(entry.file_path, device, foundDevice);
             }   
         });
     });
@@ -99,8 +99,8 @@ exports.tftpServer = function(transferFiles){
 
 
 // Function for device initialization
-function transfer(filePath, device){
-    if(device === usb.findByIds(ROMVID, ROMPID)) percent = increment;
+function transfer(filePath, device, foundDevice){
+    if(foundDevice == 'ROM') percent = increment;
     i = 1;          // Keeps count of File Blocks transferred
     blocks = 2;     // Number of blocks of file, assigned greater than i here
     description = path.basename(filePath)+" =>";
@@ -140,7 +140,7 @@ function transfer(filePath, device){
     percent += increment;
 
     // Code to initialize RNDIS device on Windows and OSX
-    if(platform != 'linux' && file == 'spl'){
+    if(platform != 'linux' && foundDevice == 'ROM'){
         var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
         intf0.claim();
 
