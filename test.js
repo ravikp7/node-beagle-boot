@@ -1,19 +1,30 @@
 var BB = require('./main');
 
-var ums = BB.usbMassStorage();
+var emitter = BB.usbMassStorage();
 
-ums.on('progress', function(status){
+console.log('Server started');
+console.log('Connect BeagleBone to get started');
+
+emitter.on('progress', function(status){
     console.log(status);
 });
 
-ums.on('done', function(){
-    console.log('Select Image');
+emitter.on('done', function(){
+    console.log('Transfer Complete');
 });
 
-ums.on('error', function(error){
+emitter.on('error', function(error){
     console.log('Error: '+error);
 });
 
-ums.on('disconnect', function(device){
-    console.log(device + ' device got disconnected');
+emitter.on('connect', function(device){
+    if(device === 'UMS') console.log('Ready for Flashing!');
 });
+
+/*
+Same function to trasnfer SPL and UBOOT for USB Mass Storage using the File Transfer API
+BB.tftpServer([
+    {vid: 0x0451, pid: 0x6141, file_path: './bin/spl'},
+    {vid: 0x525, pid: 0xa4a2, file_path: './bin/uboot'}
+]);
+*/

@@ -12,86 +12,103 @@ const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
 const server_ip = [0xc0, 0xa8, 0x01, 0x09];     // 192.168.1.9
 const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
 const servername = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84];       // ASCII ['B','E','A','G','L','E','B','O','O','T']
-const file_spl = [83, 80, 76, 0, 0];                             // ASCII ['S','P','L']
-const file_uboot = [85, 66, 79, 79, 84];                           // ASCII ['U','B','O','O','T']
 const UMSVID = 0x0451;
 const UMSPID = 0xd022;
+const UBOOTVID = 0x0525;
+const UBOOTPID = 0xa4a5;
 
 // Size of all packets
-var rndisSize = 44;
-var etherSize = 14;
-var arp_Size = 28;
-var ipSize = 20;
-var udpSize = 8;
-var bootpSize = 300;
-var tftpSize = 4;
-var fullSize = 386;
+const rndisSize = 44;
+const etherSize = 14;
+const arp_Size = 28;
+const ipSize = 20;
+const udpSize = 8;
+const bootpSize = 300;
+const tftpSize = 4;
+const fullSize = 386;
 
 
 // Include modules
-var usb = require('usb');
-var protocols = require('./src/protocols');
-var EventEmitter = require('events').EventEmitter;
-var emitter = new EventEmitter();
-var fs = require('fs');
-var path = require('path');
-var os = require('os');
-var platform = os.platform();
-var rndis_win = require('./src/rndis_win');
-var inEndpoint, outEndpoint, Data, ether, rndis, eth2, ip, udp, bootreply, romDevice, splDevice, umsDevice;
-var emitterMod = new EventEmitter();    // Emitter for module status
+const usb = require('usb');
+const protocols = require('./src/protocols');
+const EventEmitter = require('events').EventEmitter;
+const emitter = new EventEmitter();
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const platform = os.platform();
+const rndis_win = require('./src/rndis_win');
+var inEndpoint, outEndpoint, Data, ether, rndis, eth2, ip, udp, bootreply, increment;
+const emitterMod = new EventEmitter();    // Emitter for module status
 var percent;    // Percentage for progress
 var description;    // Description for current status
 
 // Set usb debug log
 //usb.setDebugLevel(4);   
 
+// TFTP server for USB Mass Storage
 exports.usbMassStorage = function(){
-    
-    // Connect to BeagleBone
+    return exports.tftpServer([
+        {vid: ROMVID, pid: ROMPID, file_path: path.join(__dirname, 'bin', 'spl')},
+        {vid: SPLVID, pid: SPLPID, file_path: path.join(__dirname, 'bin', 'uboot')}
+    ]);
+};
+
+
+// TFTP server for any file transfer
+exports.tftpServer = function(transferFiles){
+
+    var foundDevice;
+    increment = (100 / (transferFiles.length * 9));
     usb.on('attach', function(device){
 
-        if(device === usb.findByIds(ROMVID, ROMPID)){
-            transfer('spl', device, 0x02);
-            romDevice = device;
+        switch(device){
+            case usb.findByIds(ROMVID, ROMPID): foundDevice = 'ROM';
+            break;
+
+            case usb.findByIds(SPLVID, SPLPID): foundDevice = 'SPL';
+            break;
+
+            case usb.findByIds(UBOOTVID, UBOOTPID): foundDevice = 'UBOOT';
+            break;
+
+            case usb.findByIds(UMSVID, UMSPID): foundDevice = 'UMS';
+            break;
+
+            default: foundDevice = 'Device';
         }
 
-        if(device === usb.findByIds(SPLVID, SPLPID)){
-            setTimeout(()=>{ transfer('uboot', device, 0x01); }, 1000);
-            splDevice = device;
-        }
+        emitterMod.emit('connect', foundDevice);
 
-        if(device === usb.findByIds(UMSVID, UMSPID)){
-            emitterMod.emit('progress', {description: 'Ready for Flashing!', complete: 100});
-            umsDevice = device;
-        }
+        // Transfer files
+        transferFiles.forEach(function(entry){
+
+            if(device === usb.findByIds(entry.vid, entry.pid)){ 
+                var timeout = (foundDevice == 'ROM')? 0: 500;
+                setTimeout(()=>{transfer(entry.file_path, device, foundDevice);}, timeout);
+            }   
+        });
     });
 
-    usb.on('detach', function(device){       
+    usb.on('detach', function(device){
 
-        if(device === romDevice && percent < 40)
-            emitterMod.emit('disconnect', 'ROM');
-
-        if(device === splDevice && percent < 85)
-            emitterMod.emit('disconnect', 'SPL');
-        
-        if(device === umsDevice)
-            emitterMod.emit('disconnect', 'UMS');
+        emitterMod.emit('disconnect', foundDevice);
     });
 
-    return emitterMod;
+    return emitterMod;  // Event Emitter for progress
 };
 
 
 // Function for device initialization
-function transfer(file, device, outEnd){
-    if(file === 'spl') percent = 0;
+function transfer(filePath, device, foundDevice){
+    if(foundDevice == 'ROM') percent = increment;
+    i = 1;          // Keeps count of File Blocks transferred
+    blocks = 2;     // Number of blocks of file, assigned greater than i here
+    description = path.basename(filePath)+" =>";
+    emitterMod.emit('progress', {description: description, complete: +percent.toFixed(2)});
+    percent += increment;
 
-    description = file+" =>";
-    emitterMod.emit('progress', {description: description, complete: percent});
-    percent += 5;
-
-    if(file == 'uboot' && platform != 'linux'){
+    if(path.basename(filePath) != 'spl' && platform != 'linux'){
         device.open(false);
         device.setConfiguration(2, function(err){if(err) console.log(err);});
         device.__open();
@@ -120,11 +137,11 @@ function transfer(file, device, outEnd){
     }
 
     description = "Interface claimed";
-    emitterMod.emit('progress', {description: description, complete: percent});
-    percent += 5;
+    emitterMod.emit('progress', {description: description, complete: +percent.toFixed(2)});
+    percent += increment;
 
     // Code to initialize RNDIS device on Windows and OSX
-    if(platform != 'linux' && file == 'spl'){
+    if(platform != 'linux' && foundDevice == 'ROM'){
         var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
         intf0.claim();
 
@@ -171,43 +188,55 @@ function transfer(file, device, outEnd){
     }                      
 
     // Set endpoints for usb transfer
-    inEndpoint = interface.endpoint(0x81);
-    outEndpoint = interface.endpoint(outEnd);
+    inEndpoint = interface.endpoint(interface.endpoints[0].address);
+    outEndpoint = interface.endpoint(interface.endpoints[1].address);
 
     // Set endpoint transfer type
     inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
     outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
 
-    emitter.emit('inTransfer', file);
+    emitter.emit('inTransfer', filePath);
 }
 
 
 
 // Event for inEnd transfer
-emitter.on('inTransfer', function(file){
+emitter.on('inTransfer', function(filePath){
 
     inEndpoint.transfer(MAXBUF, function(error, data){
         
         if(!error){           
-            var request = identifyRequest(data);
+            var request = identifyRequest(data, path.basename(filePath).length);
             
-            if(request === 'notIdentified') emitter.emit('inTransfer', file);
+            if(request == 'notIdentified') emitter.emit('inTransfer', filePath);
 
             else {
 
-                emitterMod.emit('progress', {description: request + " request received", complete: percent});
-                percent += 5;
-
-                if(request == 'BOOTP') Data = processBOOTP(file, data);
+                if(request == 'BOOTP') Data = processBOOTP(filePath, data);
 
                 if(request == 'ARP') Data = processARP(data);
 
-                if(request == 'TFTP') {               
-                    Data = processTFTP(data);
-                    emitter.emit('sendFile', file);
+                if(request == 'TFTP_Data') Data = processTFTP_Data();
+                else{    
+                    emitterMod.emit('progress', {description: request + " request received", complete: +percent.toFixed(2)});
+                    percent += increment;
                 }
 
-                else emitter.emit('outTransfer', file, Data, request);
+                if(request == 'TFTP') {
+                    emitterMod.emit('progress', {description: path.basename(filePath)+" transfer starts", complete: +percent.toFixed(2)});
+                    percent += increment;
+
+                    emitter.emit('processTFTP', data, filePath);
+                }
+
+                else if(i <= blocks+1){     // Transfer until all blocks of file are transferred
+                        emitter.emit('outTransfer', filePath, Data, request);
+                    }
+                    else{
+                        emitterMod.emit('progress', {description: path.basename(filePath)+" transfer complete", complete: +percent.toFixed(2)});
+                        if(+percent.toFixed(2) == 100) emitterMod.emit('done');     // Emitted on completion
+                        percent += increment;
+                    }
             }
         }
 
@@ -220,15 +249,17 @@ emitter.on('inTransfer', function(file){
 
 
 // Event for outEnd Transfer
-emitter.on('outTransfer', function(file, data, request){
+emitter.on('outTransfer', function(filePath, data, request){
 
     outEndpoint.transfer(data, function(error){
         
         if(!error){
-            emitterMod.emit('progress', {description: request + " reply done", complete: percent});
-            percent += 5;
+            if(request == 'BOOTP' || request == 'ARP'){
+                emitterMod.emit('progress', {description: request + " reply done", complete: +percent.toFixed(2)});
+                percent += increment;
+            }
 
-            emitter.emit('inTransfer', file);
+            emitter.emit('inTransfer', filePath);
         }
         else {
             emitterMod.emit('error', "ERROR sending " + request);
@@ -238,121 +269,56 @@ emitter.on('outTransfer', function(file, data, request){
     
 });
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-///////////////////////////////////////////// File Transfer ////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-emitter.on('sendFile', function(file){
-    description = file+" transfer starts";
-    emitterMod.emit('progress', {description: description, complete: percent});
-    percent += 5;
-
-    fs.readFile(path.join(__dirname, "bin", file), function(error, data){
-    
-        if(!error){
-    
-            var blocks = Math.ceil(data.length/512);         // Total number of blocks of file
-
-            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    
-
-            var start = 0;                                  // Source start for copy
-
-            for(var i=1; i<=blocks; i++){                   // i is block number
-                
-                var blk_size = (i==blocks)? data.length - (blocks-1)*512 : 512;  // Different block size for last block
-
-                var blk_data = Buffer.alloc(blk_size);
-                data.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
-                start += blk_size; 
-
-                rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
-                ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
-                udp = protocols.make_udp(tftpSize + blk_size, udpSPL.udpDest, udpSPL.udpSrc);
-                tftp = protocols.make_tftp(3, i);
-
-                var file_data = Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
-
-                // Send SPL file data
-                outEndpoint.transfer(file_data, function(error){});
-
-                // Receive buffer back
-                inEndpoint.transfer(MAXBUF, function(error, data){});
-                
-            }
-
-            description = file+" transfer complete";
-            emitterMod.emit('progress', {description: description, complete: percent});
-            percent += 5;
-        }
-        else emitterMod.emit('error', "Error reading "+file+" : "+error);
-    });
-});
 
 // Function to identify request packet
-function identifyRequest(buff){
+function identifyRequest(buff, len){
     var val = buff[4];
 
     if(val == 0xc2 || val == 0x6c) return 'BOOTP';
 
     if(val == 0x56) return 'ARP';
 
-    if(val == 0x62 || val == 0x7b) return 'TFTP';
+    if(val == (0x5f + len) || val == (0x76 + len)) return 'TFTP';
 
+    if(val == 0x5a) return 'TFTP_Data';
+    console.log(val);
     return 'notIdentified';
 
 }
 
 // Function to process BOOTP request
-function processBOOTP(file, data){
+function processBOOTP(filePath, data){
 
-    var bootp_buf = Buffer.alloc(MAXBUF-rndisSize); 
+    var ether_buf = Buffer.alloc(MAXBUF-rndisSize); 
 
-    if(file == 'spl'){
-
-        data.copy(bootp_buf, 0, rndisSize, MAXBUF);
-
-        ether = protocols.decode_ether(bootp_buf);      // Gets decoded ether packet data
-
-        rndis = protocols.make_rndis(fullSize-rndisSize);   // Make RNDIS
-
-        eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);    // Make ether2
-
-        ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0); // Make ipv4
-
-        udp = protocols.make_udp(bootpSize, BOOTPS, BOOTPC);    // Make udp
-
-        bootreply = protocols.make_bootp(servername, file_spl, 1, ether.h_source, BB_ip, server_ip);    // Make BOOTP for reply
-
-        buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);      // BOOT Reply
-
-    }
-
-    else{
-
-        var udpUboot_buf = Buffer.alloc(udpSize);
+    var udp_buf = Buffer.alloc(udpSize);
                 
-        var spl_bootp_buf = Buffer.alloc(bootpSize);
+    var bootp_buf = Buffer.alloc(bootpSize);
 
-        data.copy(udpUboot_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
+    data.copy(udp_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
 
-        data.copy(spl_bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);  
+    data.copy(bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);
+        
+    data.copy(ether_buf, 0, rndisSize, MAXBUF);
 
-        var udpUboot = protocols.parse_udp(udpUboot_buf);       // parsed udp header
+    ether = protocols.decode_ether(ether_buf);      // Gets decoded ether packet data
 
-        var spl_bootp = protocols.parse_bootp(spl_bootp_buf);   // parsed bootp header
+    var udpUboot = protocols.parse_udp(udp_buf);       // parsed udp header
 
-        rndis = protocols.make_rndis(fullSize - rndisSize);
+    var bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
 
-        eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
+    rndis = protocols.make_rndis(fullSize - rndisSize);
 
-        ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
+    eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
 
-        udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
+    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
 
-        bootreply = protocols.make_bootp(servername, file_uboot, spl_bootp.xid, ether.h_source, BB_ip, server_ip);
+    udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
 
-        buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
-    }
+    bootreply = protocols.make_bootp(servername, path.basename(filePath), bootp.xid, ether.h_source, BB_ip, server_ip);
 
+    buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
+    
     return buff;
 }
 
@@ -378,7 +344,7 @@ function processARP(data){
 }
 
 // Function to process TFTP request
-function processTFTP(data){
+emitter.on('processTFTP', function(data, filePath){
 
     var udpSPL_buf = Buffer.alloc(udpSize);
 
@@ -386,4 +352,33 @@ function processTFTP(data){
             
     udpSPL = protocols.parse_udp(udpSPL_buf);           // Received UDP packet for SPL tftp
 
+    fs.readFile(filePath, function(error, file_data){
+        if(!error){
+            fileData = file_data;
+            blocks = Math.ceil(fileData.length/512);         // Total number of blocks of file
+            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
+            start = 0;
+            emitter.emit('outTransfer', filePath, processTFTP_Data(), undefined);
+        }
+        
+        else emitterMod.emit('error', "Error reading "+path.basename(filePath)+" : "+error);
+    });
+
+});
+
+// Function to process File data for TFTP
+function processTFTP_Data(){
+
+    var blk_size = (i==blocks)? fileData.length - (blocks-1)*512 : 512;  // Different block size for last block
+
+    var blk_data = Buffer.alloc(blk_size);
+    fileData.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
+    start += blk_size; 
+
+    rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
+    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
+    udp = protocols.make_udp(tftpSize + blk_size, udpSPL.udpDest, udpSPL.udpSrc);
+    tftp = protocols.make_tftp(3, i);
+    i++;
+    return Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
 }
