@@ -75,12 +75,17 @@ function transfer(file, device, outEnd){
 
     if(file == 'uboot' && platform != 'linux'){
         device.open(false);
-        device.setConfiguration(2, function(err){console.log("Error");});
-        _device.__open();
-        _device.__claimInterface(0);
+        device.setConfiguration(2, function(err){console.log("Error"); onOpen(file, device, outEnd);});
+        //_device.__open();
+        //_device.__claimInterface(0);
+    } else {
+        device.open();
+        onOpen(file, device, outEnd);
     }
+}
 
-    device.open();
+function onOpen(file, device, outEnd){
+    device.__open();
     var interface = device.interface(1);    // Select interface 1 for BULK transfers
 
     windows = 0;
