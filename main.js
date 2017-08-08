@@ -99,15 +99,26 @@ function transfer(server){
     if(server.foundDevice == 'ROM') progress.percent = progress.increment;
     updateProgress(server.foundDevice +" =>");
 
-    if(server.foundDevice == 'SPL' && platform != 'linux'){
-        server.device.open(false);
-        server.device.setConfiguration(2, function(err){if(err) emitterMod.emit('error', "Can't set configuration " +err);});
-        server.device.__open();
-        server.device.__claimInterface(0);
+    try {
+        if(server.foundDevice == 'SPL' && platform != 'linux'){
+            server.device.open(false);
+            server.device.setConfiguration(2, function(err){
+                if(err) emitterMod.emit('error', "Can't set configuration " +err);
+                server.device.__open();
+                onOpen(server);
+            });
+        } else {
+            server.device.open();
+            onOpen(server);
+        }
     }
+    catch(ex){
+        emitterMod.emit('error', "Can't open device " +ex);
+    }
+}
 
+function onOpen(server){
     try{
-        server.device.open();
         var interface = server.device.interface(1);    // Select interface 1 for BULK transfers
 
         if(platform != 'win32'){                // Not supported in Windows
