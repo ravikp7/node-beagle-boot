@@ -110,7 +110,7 @@ function transfer(filePath, device, foundDevice){
 
     if(path.basename(filePath) != 'spl' && platform != 'linux'){
         device.open(false);
-        device.setConfiguration(2, function(err){if(err) console.log(err);});
+        device.setConfiguration(2, function(err){if(err) emitterMod.emit('error', "Can't set configuration " +err);});
         device.__open();
         device.__claimInterface(0);
     }
@@ -163,12 +163,12 @@ function transfer(filePath, device, foundDevice){
 
         // Sending rndis_init_msg (SEND_ENCAPSULATED_COMMAND)
         device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
-            console.log(error);
+            if(error) emitterMod.emit('error', "Control transfer error on SEND_ENCAPSULATED " +error);
         });
 
         // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
         device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
-            console.log(data);
+            if(error) emitterMod.emit('error', "Control transfer error on GET_ENCAPSULATED " +error);
         });
 
 
@@ -177,12 +177,12 @@ function transfer(filePath, device, foundDevice){
 
         // Send rndis_set_msg (SEND_ENCAPSULATED_COMMAND)
         device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
-            console.log(error);
+            if(error) emitterMod.emit('error', "Control transfer error on SEND_ENCAPSULATED " +error);
         });
 
         // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
         device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
-            console.log(data);
+            if(error) emitterMod.emit('error', "Control transfer error on GET_ENCAPSULATED " +error);
         });
 
     }                      
@@ -242,7 +242,6 @@ emitter.on('inTransfer', function(filePath){
 
         else {
             emitterMod.emit('error', "ERROR in inTransfer");
-            console.log(error);
         }
     });
 });
@@ -263,7 +262,6 @@ emitter.on('outTransfer', function(filePath, data, request){
         }
         else {
             emitterMod.emit('error', "ERROR sending " + request);
-            console.log(error);
         }  
     });
     
@@ -281,7 +279,7 @@ function identifyRequest(buff, len){
     if(val == (0x5f + len) || val == (0x76 + len)) return 'TFTP';
 
     if(val == 0x5a) return 'TFTP_Data';
-    console.log(val);
+    
     return 'notIdentified';
 
 }
