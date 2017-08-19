@@ -163,7 +163,8 @@ function transfer(filePath, device, foundDevice){
 
         // Sending rndis_init_msg (SEND_ENCAPSULATED_COMMAND)
         device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
-            if(error) emitterMod.emit('error', "Control transfer error on SEND_ENCAPSULATED " +error);
+            // This error doesn't affect the functionality, so ignoring
+            //if(error) emitterMod.emit('error', "Control transfer error on SEND_ENCAPSULATED " +error);
         });
 
         // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
@@ -177,7 +178,8 @@ function transfer(filePath, device, foundDevice){
 
         // Send rndis_set_msg (SEND_ENCAPSULATED_COMMAND)
         device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
-            if(error) emitterMod.emit('error', "Control transfer error on SEND_ENCAPSULATED " +error);
+            // This error doesn't affect the functionality, so ignoring
+            //if(error) emitterMod.emit('error', "Control transfer error on SEND_ENCAPSULATED " +error);
         });
 
         // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
