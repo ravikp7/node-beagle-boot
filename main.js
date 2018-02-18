@@ -3,8 +3,10 @@ const ROMPID = 0x6141;
 const BOOTPS = 67;
 const BOOTPC = 68;
 const IPUDP = 17;
-const SPLVID = 0x0525;
-const SPLPID = 0xA4A2;
+//const SPLVID = 0x0525;
+//const SPLPID = 0xA4A2;
+const SPLVID = 0x0451;
+const SPLPID = 0xd022;
 const ETHIPP = 0x0800;
 const ETHARPP = 0x0806;
 const MAXBUF = 450;
@@ -208,7 +210,7 @@ emitter.on('inTransfer', function(filePath){
     inEndpoint.transfer(MAXBUF, function(error, data){
         
         if(!error){           
-            var request = identifyRequest(data, path.basename(filePath).length);
+            var request = identifyRequest(data);
             
             if(request == 'notIdentified') emitter.emit('inTransfer', filePath);
 
@@ -271,14 +273,14 @@ emitter.on('outTransfer', function(filePath, data, request){
 
 
 // Function to identify request packet
-function identifyRequest(buff, len){
+function identifyRequest(buff){
     var val = buff[4];
-
-    if(val == 0xc2 || val == 0x6c) return 'BOOTP';
+ 
+    if(val == 0xc2 || val == 0x6c || val == 0x82) return 'BOOTP';
 
     if(val == 0x56) return 'ARP';
 
-    if(val == (0x5f + len) || val == (0x76 + len)) return 'TFTP';
+    if(val == 0x62 || val == 0x6e) return 'TFTP';
 
     if(val == 0x5a) return 'TFTP_Data';
     
