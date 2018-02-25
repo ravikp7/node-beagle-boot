@@ -274,15 +274,33 @@ emitter.on('outTransfer', function(filePath, data, request){
 
 // Function to identify request packet
 function identifyRequest(buff){
-    var val = buff[4];
- 
-    if(val == 0xc2 || val == 0x6c || val == 0x82) return 'BOOTP';
 
-    if(val == 0x56) return 'ARP';
+    // Checking Ether Type
 
-    if(val == 0x62 || val == 0x6e) return 'TFTP';
+    if (buff[rndisSize + 12] == 0x08 && buff[rndisSize + 13] == 0x06) return 'ARP';      // 0x0806 for ARP
 
-    if(val == 0x5a) return 'TFTP_Data';
+    if (buff[rndisSize + 12] == 0x08 && buff[rndisSize + 13] == 0x00)                    // 0x0800 for IPv4
+    {
+        // Checking IPv4 protocol for UDP
+        if (buff[rndisSize + etherSize + 9] == IPUDP){                                   // 0x11 for UDP in IPv4
+            
+            // UDP, So now checking for BOOTP or TFTP ports
+            var port = rndisSize + etherSize + ipSize;
+            
+            if (buff[port+1] == BOOTPC && buff[port+3] == BOOTPS) return 'BOOTP';        // Port 68: BOOTP Client, Port 67: BOOTP Server
+
+            if (buff[port+3] == 69){                                                     // Port 69: TFTP
+                
+                // Handling TFTP requests
+                var opcode = buff[rndisSize + etherSize + ipSize + udpSize + 1];
+
+                if (opcode == 1) return 'TFTP';                                          // Opcode = 1 for Read Request (RRQ)
+                if (opcode == 4) return 'TFTP_Data';                                     // Opcode = 4 for Acknowledgement (ACK)
+
+            }
+        }
+        
+    }
     
     return 'notIdentified';
 
