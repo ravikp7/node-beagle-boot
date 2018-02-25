@@ -51,8 +51,8 @@ npm start
 
 It should now boot BB into USB Mass Storage Mode.
 
-## U-boot binary build instructions:
 ___
+## U-boot binary build instructions:
 * Get the latest U-boot sources and set up Cross Compiler from [instructions here](http://eewiki.net/display/linuxonarm/BeagleBone+Black#BeagleBoneBlack-Bootloader:U-Boot)
 
 #### Configuration after applying patches:
@@ -64,15 +64,31 @@ CONFIG_SPL_USBETH_SUPPORT=y
 CONFIG_SPL_NET_VCI_STRING="AM335x U-Boot SPL"
 CONFIG_NET_RANDOM_ETHADDR=y
 ```
-* Run the following commands:
+* Run the following command:
 ```
 make ARCH=arm CROSS_COMPILE=${CC} am335x_evm_defconfig
-make ARCH=arm CROSS_COMPILE=${CC}
+```
+* To enable USB Mass Storage, run command
+```
+make menuconfig
+```
+Select `Command Line Interface` -> `Device Access Commands` -> `UMS usb mass storage`
+
+* Add following lines in u-boot/include/configs/am335x_evm.h
+```
+#if defined(CONFIG_CMD_USB_MASS_STORAGE)
+#define CONFIG_USB_FUNCTION_MASS_STORAGE
+#endif
 ```
 
+* Run the following command:
+```
+make ARCH=arm CROSS_COMPILE=${CC}
+```
+Now SPL binary is `spl/u-boot-spl.bin` and uboot binary is `u-boot.img`
 
-## API Documentation
 ___
+## API Documentation
 #### For USB Mass Storage
 ### require('beagle-boot').usbMassStorage() => `EventEmitter`
 The returned EventEmitter instance emits following events:
