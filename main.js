@@ -106,7 +106,7 @@ function transfer(filePath, device, foundDevice){
     if(foundDevice == 'ROM') percent = increment;
     i = 1;          // Keeps count of File Blocks transferred
     blocks = 2;     // Number of blocks of file, assigned greater than i here
-    description = path.basename(filePath)+" =>";
+    description = foundDevice +" =>";
     emitterMod.emit('progress', {description: description, complete: +percent.toFixed(2)});
     percent += increment;
 
@@ -226,12 +226,7 @@ emitter.on('inTransfer', function(filePath){
                     percent += increment;
                 }
 
-                if(request == 'TFTP') {
-                    emitterMod.emit('progress', {description: path.basename(filePath)+" transfer starts", complete: +percent.toFixed(2)});
-                    percent += increment;
-
-                    emitter.emit('processTFTP', data, filePath);
-                }
+                if(request == 'TFTP') emitter.emit('processTFTP', data);
 
                 else if(i <= blocks+1){     // Transfer until all blocks of file are transferred
                         emitter.emit('outTransfer', filePath, Data, request);
@@ -364,7 +359,7 @@ function processARP(data){
 }
 
 // Function to process TFTP request
-emitter.on('processTFTP', function(data, filePath){
+emitter.on('processTFTP', function(data){
 
     var udpTFTP_buf = Buffer.alloc(udpSize);
 
@@ -372,13 +367,25 @@ emitter.on('processTFTP', function(data, filePath){
             
     udpTFTP = protocols.parse_udp(udpTFTP_buf);           // Received UDP packet for SPL tftp
 
+    var fv = rndisSize + etherSize + ipSize + udpSize + 2;  // FileName from TFTP packet
+    var nameCount = 0;
+    var fileName = '';
+    while (data[fv + nameCount] != 0){
+        fileName += String.fromCharCode(data[fv + nameCount]);
+        nameCount++;
+    }
+    var filePath = path.join('bin', fileName);
+
+    emitterMod.emit('progress', {description: path.basename(filePath)+" transfer starts", complete: +percent.toFixed(2)});
+    percent += increment;
+
     fs.readFile(filePath, function(error, file_data){
         if(!error){
             fileData = file_data;
             blocks = Math.ceil(fileData.length/512);         // Total number of blocks of file
             eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
             start = 0;
-            emitter.emit('outTransfer', filePath, processTFTP_Data(), undefined);
+            emitter.emit('outTransfer', filePath, processTFTP_Data(), 'TFTP');
         }
         
         else emitterMod.emit('error', "Error reading "+path.basename(filePath)+" : "+error);
