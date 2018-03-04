@@ -51,8 +51,8 @@ var description;    // Description for current status
 // TFTP server for USB Mass Storage
 exports.usbMassStorage = function(){
     return exports.tftpServer([
-        {vid: ROMVID, pid: ROMPID, file_path: path.join(__dirname, 'bin', 'spl')},
-        {vid: SPLVID, pid: SPLPID, file_path: path.join(__dirname, 'bin', 'uboot')}
+        {vid: ROMVID, pid: ROMPID, file_path: path.join(__dirname, 'bin', 'u-boot-spl.bin')},
+        {vid: SPLVID, pid: SPLPID, file_path: path.join(__dirname, 'bin', 'u-boot.img')}
     ]);
 };
 
