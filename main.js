@@ -403,7 +403,7 @@ function processTFTP_Data(){
     start += blk_size; 
 
     rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
-    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
+    ip = protocols.make_ipv4(receivedARP.ip_dest, receivedARP.ip_source, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
     udp = protocols.make_udp(tftpSize + blk_size, udpTFTP.udpDest, udpTFTP.udpSrc);
     tftp = protocols.make_tftp(3, i);
     i++;
