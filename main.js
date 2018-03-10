@@ -107,20 +107,19 @@ function transfer(server){
         server.device.__claimInterface(0);
     }
 
-    server.device.open();
-    var interface = server.device.interface(1);    // Select interface 1 for BULK transfers
-
-    if(platform != 'win32'){                // Not supported in Windows
-        // Detach Kernel Driver
-        if(interface && interface.isKernelDriverActive()){
-            interface.detachKernelDriver();
-        }
-    }
-
     try{
+        server.device.open();
+        var interface = server.device.interface(1);    // Select interface 1 for BULK transfers
+
+        if(platform != 'win32'){                // Not supported in Windows
+            // Detach Kernel Driver
+            if(interface && interface.isKernelDriverActive()){
+                interface.detachKernelDriver();
+            }
+        }
+
         interface.claim();
     }
-
     catch(err){
         emitterMod.emit('error', "Can't claim interface " +err);
     }
@@ -362,8 +361,10 @@ emitter.on('processTFTP', function(server, data){
             server.tftp.fileData = file_data;
             emitter.emit('outTransfer', server, processTFTP_Data(server, data), 'TFTP');
         }
-        
-        else emitterMod.emit('error', "Error reading "+server.filePath+" : "+error);
+        else{
+            emitter.emit('outTransfer', server, processTFTP_Error(server, data), 'TFTP');
+	    emitterMod.emit('error', "Error reading "+server.filePath+" : "+error);
+	}
     });
 
 });
@@ -383,6 +384,15 @@ function processTFTP_Data(server, data){
     var tftp = protocols.make_tftp(3, server.tftp.i);
     server.tftp.i++;
     return Buffer.concat([rndis, server.tftp.eth2, ip, udp, tftp, blockData], rndisSize + etherSize + ipSize + udpSize + tftpSize + blockSize);
+}
+
+function processTFTP_Error(server, data){
+    var error_msg = "File not found";
+    var rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + error_msg.length + 1);
+    var ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, ipSize + udpSize + tftpSize + error_msg.length + 1, 0);
+    var udp = protocols.make_udp(tftpSize + error_msg.length + 1, server.tftp.receivedUdp.udpDest, server.tftp.receivedUdp.udpSrc);
+    var tftp = protocols.make_tftp(5, 1, error_msg);
+    return Buffer.concat([rndis, server.tftp.eth2, ip, udp, tftp], rndisSize + etherSize + ipSize + udpSize + tftpSize + error_msg.length + 1);
 }
 
 // Function for progress update
