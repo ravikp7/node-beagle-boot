@@ -63,7 +63,7 @@ exports.usbMassStorage = function(){
 exports.tftpServer = function(serverConfigs){
 
     var foundDevice;
-    progress.increment = (100 / (serverConfigs.length * 9));
+    progress.increment = (100 / (serverConfigs.length * 10));
     usb.on('attach', function(device){
 
         switch(device){
@@ -403,7 +403,7 @@ function processTFTP_Data(server, data){
 
 function updateProgress(description){
     emitterMod.emit('progress', {description: description, complete: +progress.percent.toFixed(2)});
-    if(progress.percent.toFixed(2) == 100) emitterMod.emit('done');     // Emitted on completion
+
     if(progress.percent <= 100) {
         progress.percent += progress.increment;
     }

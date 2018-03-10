@@ -9,10 +9,6 @@ emitter.on('progress', function(status){
     console.log(status);
 });
 
-emitter.on('done', function(){
-    console.log('Transfer Complete');
-});
-
 emitter.on('error', function(error){
     console.log('Error: '+error);
 });
