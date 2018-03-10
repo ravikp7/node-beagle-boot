@@ -53,20 +53,30 @@ It should now boot BB into USB Mass Storage Mode.
 
 ___
 ## U-boot binary build instructions:
-* Get the latest U-boot sources and set up Cross Compiler from [instructions here](http://eewiki.net/display/linuxonarm/BeagleBone+Black#BeagleBoneBlack-Bootloader:U-Boot)
+* Use your preferred Cross Compiler or set up one from [instructions here](http://eewiki.net/display/linuxonarm/BeagleBone+Black#BeagleBoneBlack-ARMCrossCompiler:GCC)
 
-#### Configuration after applying patches:
-* Add the following lines in u-boot/configs/am335x_evm_defconfig
+* Get the latest U-boot sources and checkout v2018.03-rc4
 ```
-CONFIG_SPL_NET_SUPPORT=y
-CONFIG_SPL_USB_GADGET_SUPPORT=y
-CONFIG_SPL_USBETH_SUPPORT=y
-CONFIG_SPL_NET_VCI_STRING="AM335x U-Boot SPL"
-CONFIG_NET_RANDOM_ETHADDR=y
+git clone https://github.com/u-boot/u-boot.git
+cd u-boot
+git checkout v2018.03-rc4 -b tmp
 ```
-* Run the following command:
+* Apply RCN's Patches
 ```
-make ARCH=arm CROSS_COMPILE=${CC} am335x_evm_defconfig
+wget https://raw.githubusercontent.com/RobertCNelson/Bootloader-Builder/master/patches/v2018.03-rc4/0001-am335x_evm-uEnv.txt-bootz-n-fixes.patch
+wget https://raw.githubusercontent.com/RobertCNelson/Bootloader-Builder/master/patches/v2018.03-rc4/0002-U-Boot-BeagleBone-Cape-Manager.patch
+
+git am 0001-am335x_evm-uEnv.txt-bootz-n-fixes.patch
+git am 0002-U-Boot-BeagleBone-Cape-Manager.patch
+```
+* Apply default UMS(USB Mass Storage) Patch
+```
+wget https://raw.githubusercontent.com/ravikp7/node-beagle-boot/master/ums-patch.diff
+git apply ums-patch.diff
+```
+* Run the following command for config:
+```
+make ARCH=arm CROSS_COMPILE=${CC} am335x_evm_usbspl_defconfig
 ```
 * To enable USB Mass Storage, run command
 ```
@@ -74,14 +84,9 @@ make menuconfig
 ```
 Select `Command Line Interface` -> `Device Access Commands` -> `UMS usb mass storage`
 
-* Add following lines in u-boot/include/configs/am335x_evm.h
-```
-#if defined(CONFIG_CMD_USB_MASS_STORAGE)
-#define CONFIG_USB_FUNCTION_MASS_STORAGE
-#endif
-```
+Then 'Save' and 'Exit'
 
-* Run the following command:
+* Run the following command to compile:
 ```
 make ARCH=arm CROSS_COMPILE=${CC}
 ```
