@@ -98,8 +98,6 @@ exports.tftpServer = function(serverConfigs){
 // Function for device initialization
 function transfer(server){
     if(server.foundDevice == 'ROM') progress.percent = progress.increment;
-    server.i = 1;          // Keeps count of File Blocks transferred
-    server.blocks = 2;     // Number of blocks of file, assigned greater than i here
     updateProgress(server.foundDevice +" =>");
 
     if(server.foundDevice == 'SPL' && platform != 'linux'){
@@ -196,30 +194,34 @@ emitter.on('inTransfer', function(server){
 
     server.inEndpoint.transfer(MAXBUF, function(error, data){
         if(!error){
-            var Data;
             var request = identifyRequest(data);
 
             if(request == 'notIdentified') emitter.emit('inTransfer', server);
 
             else {
 
-                if(request == 'BOOTP') Data = processBOOTP(server, data);
-
-                if(request == 'ARP') Data = processARP(server, data);
-
-                if(request == 'TFTP_Data') Data = processTFTP_Data(server, data);
-                else{
-                    updateProgress(request + " request received");
-                }
-
+                if(request != 'TFTP_Data') updateProgress(request + " request received");
+                
                 if(request == 'TFTP') emitter.emit('processTFTP', server, data);
-
-                else if(server.i <= server.blocks+1){     // Transfer until all blocks of file are transferred
-                        emitter.emit('outTransfer', server, Data, request);
+                else{
+                    switch(request){
+                        case 'BOOTP': emitter.emit('outTransfer', server, processBOOTP(server, data), request);
+                        break;
+    
+                        case 'ARP': emitter.emit('outTransfer', server, processARP(server, data), request);
+                        break;
+    
+                        case 'TFTP_Data': {
+                            if(server.tftp.i <= server.tftp.blocks){     // Transfer until all blocks of file are transferred
+                                emitter.emit('outTransfer', server, processTFTP_Data(server, data), request);
+                            }
+                            else{
+                                updateProgress(server.foundDevice+" TFTP transfer complete");
+                            }
+                        }
+                        break;
                     }
-                    else{
-			            updateProgress(server.foundDevice+" TFTP transfer complete");
-                    }
+                }
             }
         }
 
@@ -299,25 +301,23 @@ function processBOOTP(server, data){
         
     data.copy(ether_buf, 0, rndisSize, MAXBUF);
 
-    ether = protocols.decode_ether(ether_buf);      // Gets decoded ether packet data
+    server.ether = protocols.decode_ether(ether_buf);      // Gets decoded ether packet data
 
     var udpUboot = protocols.parse_udp(udp_buf);       // parsed udp header
 
     var bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
 
-    rndis = protocols.make_rndis(fullSize - rndisSize);
+    var rndis = protocols.make_rndis(fullSize - rndisSize);
 
-    eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
+    var eth2 = protocols.make_ether2(server.ether.h_source, server_hwaddr, ETHIPP);
 
-    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
+    var ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
 
-    udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
+    var udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
 
-    bootreply = protocols.make_bootp(servername, server.bootpFile, bootp.xid, ether.h_source, BB_ip, server_ip);
+    var bootreply = protocols.make_bootp(servername, server.bootpFile, bootp.xid, server.ether.h_source, BB_ip, server_ip);
 
-    buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
-    
-    return buff;
+    return Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
 }
 
 // Function to process ARP request
@@ -334,11 +334,9 @@ function processARP(server, data){
 
     var rndis = protocols.make_rndis(etherSize + arp_Size);
 
-    var eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
+    var eth2 = protocols.make_ether2(server.ether.h_source, server_hwaddr, ETHARPP);
 
-    var buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
-
-    return buff;
+    return Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
 }
 
 // Function to process TFTP request
@@ -348,25 +346,20 @@ emitter.on('processTFTP', function(server, data){
 
     data.copy(udpTFTP_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
             
-    server.udpTFTP = protocols.parse_udp(udpTFTP_buf);           // Received UDP packet for SPL tftp
-
-    var fv = rndisSize + etherSize + ipSize + udpSize + 2;  // FileName from TFTP packet
-    var nameCount = 0;
-    var fileName = '';
-    while (data[fv + nameCount] != 0){
-        fileName += String.fromCharCode(data[fv + nameCount]);
-        nameCount++;
-    }
+    server.tftp = {};                                                                       // Object containing TFTP parameters
+    server.tftp.i = 1;                                                                      // Keeps count of File Blocks transferred
+    server.tftp.receivedUdp = protocols.parse_udp(udpTFTP_buf);                             // Received UDP packet for SPL tftp
+    server.tftp.eth2 = protocols.make_ether2(server.ether.h_source, server_hwaddr, ETHIPP); // Making ether header here, as it remains same for all tftp block transfers
+    var fileName = extractName(data);
     server.filePath = path.join('bin', fileName);
 
     updateProgress(fileName+" transfer starts");
 
     fs.readFile(server.filePath, function(error, file_data){
         if(!error){
-            server.blocks = Math.ceil(file_data.length/512);         // Total number of blocks of file
-            server.eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
-            server.start = 0;
-            server.fileData = file_data;
+            server.tftp.blocks = Math.ceil(file_data.length/512);         // Total number of blocks of file
+            server.tftp.start = 0;
+            server.tftp.fileData = file_data;
             emitter.emit('outTransfer', server, processTFTP_Data(server, data), 'TFTP');
         }
         
@@ -378,24 +371,38 @@ emitter.on('processTFTP', function(server, data){
 // Function to process File data for TFTP
 function processTFTP_Data(server, data){
 
-    var blk_size = (server.i==server.blocks)? server.fileData.length - (server.blocks-1)*512 : 512;  // Different block size for last block
+    var blockSize = (server.tftp.i==server.tftp.blocks)? server.tftp.fileData.length - (server.tftp.blocks-1)*512 : 512;  // Different block size for last block
 
-    var blk_data = Buffer.alloc(blk_size);
-    server.fileData.copy(blk_data, 0, server.start, server.start + blk_size);                 // Copying data to block
-    server.start += blk_size; 
+    var blockData = Buffer.alloc(blockSize);
+    server.tftp.fileData.copy(blockData, 0, server.tftp.start, server.tftp.start + blockSize);                            // Copying data to block
+    server.tftp.start += blockSize;                                                                                       // Keep counts of bytes transferred upto
 
-    var rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
-    var ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
-    var udp = protocols.make_udp(tftpSize + blk_size, server.udpTFTP.udpDest, server.udpTFTP.udpSrc);
-    var tftp = protocols.make_tftp(3, server.i);
-    server.i++;
-    return Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
+    var rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blockSize);
+    var ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, ipSize + udpSize + tftpSize + blockSize, 0);
+    var udp = protocols.make_udp(tftpSize + blockSize, server.tftp.receivedUdp.udpDest, server.tftp.receivedUdp.udpSrc);
+    var tftp = protocols.make_tftp(3, server.tftp.i);
+    server.tftp.i++;
+    return Buffer.concat([rndis, server.tftp.eth2, ip, udp, tftp, blockData], rndisSize + etherSize + ipSize + udpSize + tftpSize + blockSize);
 }
 
+// Function for progress update
 function updateProgress(description){
     emitterMod.emit('progress', {description: description, complete: +progress.percent.toFixed(2)});
 
     if(progress.percent <= 100) {
         progress.percent += progress.increment;
     }
+}
+
+// Function to extract FileName from TFTP packet
+function extractName(data){
+        
+    var fv = rndisSize + etherSize + ipSize + udpSize + 2;  
+    var nameCount = 0;
+    var name = '';
+     while (data[fv + nameCount] != 0){
+        name += String.fromCharCode(data[fv + nameCount]);
+        nameCount++;
+    }
+    return name;
 }
