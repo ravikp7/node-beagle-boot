@@ -122,6 +122,7 @@ function transfer(server){
     }
     catch(err){
         emitterMod.emit('error', "Can't claim interface " +err);
+	return;
     }
 
     updateProgress("Interface claimed");
@@ -356,7 +357,7 @@ emitter.on('processTFTP', function(server, data){
 
     fs.readFile(server.filePath, function(error, file_data){
         if(!error){
-            server.tftp.blocks = Math.ceil(file_data.length/512);         // Total number of blocks of file
+            server.tftp.blocks = Math.ceil((file_data.length+1)/512);         // Total number of blocks of file
             server.tftp.start = 0;
             server.tftp.fileData = file_data;
             emitter.emit('outTransfer', server, processTFTP_Data(server, data), 'TFTP');
@@ -372,7 +373,8 @@ emitter.on('processTFTP', function(server, data){
 // Function to process File data for TFTP
 function processTFTP_Data(server, data){
 
-    var blockSize = (server.tftp.i==server.tftp.blocks)? server.tftp.fileData.length - (server.tftp.blocks-1)*512 : 512;  // Different block size for last block
+    var blockSize = server.tftp.fileData.length - server.tftp.start;
+    if(blockSize > 512) blockSize = 512;
 
     var blockData = Buffer.alloc(blockSize);
     server.tftp.fileData.copy(blockData, 0, server.tftp.start, server.tftp.start + blockSize);                            // Copying data to block
