@@ -13,7 +13,7 @@ const server_ip = [0xc0, 0xa8, 0x01, 0x09];     // 192.168.1.9
 const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
 const servername = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84];       // ASCII ['B','E','A','G','L','E','B','O','O','T']
 
-// Size of all packets
+// Size of all protocol headers
 const rndisSize = 44;
 const etherSize = 14;
 const arp_Size = 28;
@@ -44,7 +44,7 @@ var progress = {
 // Set usb debug log
 //usb.setDebugLevel(4);   
 
-// TFTP server for USB Mass Storage
+// TFTP server for USB Mass Storage, binaries must be placed in 'bin/'
 exports.usbMassStorage = function(){
     return exports.tftpServer([
         {vid: ROMVID, pid: ROMPID, bootpFile: 'u-boot-spl.bin'},
@@ -218,7 +218,7 @@ emitter.on('inTransfer', function(server){
                         emitter.emit('outTransfer', server, Data, request);
                     }
                     else{
-			updateProgress(server.foundDevice+" TFTP transfer complete");
+			            updateProgress(server.foundDevice+" TFTP transfer complete");
                     }
             }
         }

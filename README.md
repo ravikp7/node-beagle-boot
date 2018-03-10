@@ -140,12 +140,12 @@ ___
 #### For any File transfer to respective device
 ### require('beagle-boot').tftpServer( [ `file transfer objects` ] ) => `EventEmitter`
 This `EventEmitter` instance emits the same above events.
-#### `file transfer objects` are of following form:
+#### `server objects` are of following form:
 ```
 {
     vid: vID,     // Device Vendor ID as integer
     pid: pID,     // Device Product ID as integer
-    file_path: 'path'   // Path of file to be transferred
+    bootpFile: 'fileName'   // Binaries must be placed in 'bin/'
 }
 ```
 `The order of objects doesn't matter here`
@@ -154,8 +154,8 @@ This `EventEmitter` instance emits the same above events.
 var BB = require('beagle-boot');
 
 var emitter = BB.tftpServer([
-    {vid: 0x0451, pid: 0x6141, file_path: './bin/spl'},
-    {vid: 0x525, pid: 0xa4a2, file_path: './bin/uboot'}
+     {vid: 0x0451, pid: 0x6141, bootpFile: 'u-boot-spl.bin'},
+     {vid: 0x525, pid: 0xa4a2, bootpFile: 'u-boot.img'}
 ]);
 ```
 #### This API can be used to boot ramdisk also
