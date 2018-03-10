@@ -3,8 +3,10 @@ const ROMPID = 0x6141;
 const BOOTPS = 67;
 const BOOTPC = 68;
 const IPUDP = 17;
-const SPLVID = 0x0525;
-const SPLPID = 0xA4A2;
+//const SPLVID = 0x0525;
+//const SPLPID = 0xA4A2;
+const SPLVID = 0x0451;
+const SPLPID = 0xd022;
 const ETHIPP = 0x0800;
 const ETHARPP = 0x0806;
 const MAXBUF = 450;
@@ -49,8 +51,8 @@ var description;    // Description for current status
 // TFTP server for USB Mass Storage
 exports.usbMassStorage = function(){
     return exports.tftpServer([
-        {vid: ROMVID, pid: ROMPID, file_path: path.join(__dirname, 'bin', 'spl')},
-        {vid: SPLVID, pid: SPLPID, file_path: path.join(__dirname, 'bin', 'uboot')}
+        {vid: ROMVID, pid: ROMPID, file_path: path.join(__dirname, 'bin', 'u-boot-spl.bin')},
+        {vid: SPLVID, pid: SPLPID, file_path: path.join(__dirname, 'bin', 'u-boot.img')}
     ]);
 };
 
@@ -104,7 +106,7 @@ function transfer(filePath, device, foundDevice){
     if(foundDevice == 'ROM') percent = increment;
     i = 1;          // Keeps count of File Blocks transferred
     blocks = 2;     // Number of blocks of file, assigned greater than i here
-    description = path.basename(filePath)+" =>";
+    description = foundDevice +" =>";
     emitterMod.emit('progress', {description: description, complete: +percent.toFixed(2)});
     percent += increment;
 
@@ -208,7 +210,7 @@ emitter.on('inTransfer', function(filePath){
     inEndpoint.transfer(MAXBUF, function(error, data){
         
         if(!error){           
-            var request = identifyRequest(data, path.basename(filePath).length);
+            var request = identifyRequest(data);
             
             if(request == 'notIdentified') emitter.emit('inTransfer', filePath);
 
@@ -224,12 +226,7 @@ emitter.on('inTransfer', function(filePath){
                     percent += increment;
                 }
 
-                if(request == 'TFTP') {
-                    emitterMod.emit('progress', {description: path.basename(filePath)+" transfer starts", complete: +percent.toFixed(2)});
-                    percent += increment;
-
-                    emitter.emit('processTFTP', data, filePath);
-                }
+                if(request == 'TFTP') emitter.emit('processTFTP', data);
 
                 else if(i <= blocks+1){     // Transfer until all blocks of file are transferred
                         emitter.emit('outTransfer', filePath, Data, request);
@@ -271,16 +268,34 @@ emitter.on('outTransfer', function(filePath, data, request){
 
 
 // Function to identify request packet
-function identifyRequest(buff, len){
-    var val = buff[4];
+function identifyRequest(buff){
 
-    if(val == 0xc2 || val == 0x6c) return 'BOOTP';
+    // Checking Ether Type
 
-    if(val == 0x56) return 'ARP';
+    if (buff[rndisSize + 12] == 0x08 && buff[rndisSize + 13] == 0x06) return 'ARP';      // 0x0806 for ARP
 
-    if(val == (0x5f + len) || val == (0x76 + len)) return 'TFTP';
+    if (buff[rndisSize + 12] == 0x08 && buff[rndisSize + 13] == 0x00)                    // 0x0800 for IPv4
+    {
+        // Checking IPv4 protocol for UDP
+        if (buff[rndisSize + etherSize + 9] == IPUDP){                                   // 0x11 for UDP in IPv4
+            
+            // UDP, So now checking for BOOTP or TFTP ports
+            var port = rndisSize + etherSize + ipSize;
+            
+            if (buff[port+1] == BOOTPC && buff[port+3] == BOOTPS) return 'BOOTP';        // Port 68: BOOTP Client, Port 67: BOOTP Server
 
-    if(val == 0x5a) return 'TFTP_Data';
+            if (buff[port+3] == 69){                                                     // Port 69: TFTP
+                
+                // Handling TFTP requests
+                var opcode = buff[rndisSize + etherSize + ipSize + udpSize + 1];
+
+                if (opcode == 1) return 'TFTP';                                          // Opcode = 1 for Read Request (RRQ)
+                if (opcode == 4) return 'TFTP_Data';                                     // Opcode = 4 for Acknowledgement (ACK)
+
+            }
+        }
+        
+    }
     
     return 'notIdentified';
 
@@ -344,7 +359,7 @@ function processARP(data){
 }
 
 // Function to process TFTP request
-emitter.on('processTFTP', function(data, filePath){
+emitter.on('processTFTP', function(data){
 
     var udpTFTP_buf = Buffer.alloc(udpSize);
 
@@ -352,13 +367,25 @@ emitter.on('processTFTP', function(data, filePath){
             
     udpTFTP = protocols.parse_udp(udpTFTP_buf);           // Received UDP packet for SPL tftp
 
+    var fv = rndisSize + etherSize + ipSize + udpSize + 2;  // FileName from TFTP packet
+    var nameCount = 0;
+    var fileName = '';
+    while (data[fv + nameCount] != 0){
+        fileName += String.fromCharCode(data[fv + nameCount]);
+        nameCount++;
+    }
+    var filePath = path.join('bin', fileName);
+
+    emitterMod.emit('progress', {description: path.basename(filePath)+" transfer starts", complete: +percent.toFixed(2)});
+    percent += increment;
+
     fs.readFile(filePath, function(error, file_data){
         if(!error){
             fileData = file_data;
             blocks = Math.ceil(fileData.length/512);         // Total number of blocks of file
             eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
             start = 0;
-            emitter.emit('outTransfer', filePath, processTFTP_Data(), undefined);
+            emitter.emit('outTransfer', filePath, processTFTP_Data(), 'TFTP');
         }
         
         else emitterMod.emit('error', "Error reading "+path.basename(filePath)+" : "+error);
@@ -376,7 +403,7 @@ function processTFTP_Data(){
     start += blk_size; 
 
     rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
-    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
+    ip = protocols.make_ipv4(receivedARP.ip_dest, receivedARP.ip_source, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
     udp = protocols.make_udp(tftpSize + blk_size, udpTFTP.udpDest, udpTFTP.udpSrc);
     tftp = protocols.make_tftp(3, i);
     i++;

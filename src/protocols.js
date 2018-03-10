@@ -98,12 +98,20 @@ var bootp_bootfile = sp.build([ // Name of File (max 72 char here) to boot, spli
     { pad: 'string'}
 ]);
 // Max array size supported is 9, splitting vendor field in two parts
-var bootp_vendor1 = sp.build([       // Vendor extensions (Subnet here for this project)
+var bootp_vendor1 = sp.build([       // Vendor extensions (4 Byte MAGIC COOKIE and DHCP OPTIONS)
     { vendor1: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8', 5:'uint8', 6:'uint8', 7:'uint8', 8:'uint8'}},
     { pad: 'string'}
 ]);
 var bootp_vendor2 = sp.build([       
-    { vendor2: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8', 5:'uint8', 6:'uint8', 7:'uint8'}},
+    { vendor2: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8', 5:'uint8', 6:'uint8', 7:'uint8', 8:'uint8'}},
+    { pad: 'string'}
+]);
+var bootp_vendor3 = sp.build([       
+    { vendor3: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8', 5:'uint8', 6:'uint8', 7:'uint8', 8:'uint8'}}, 
+    { pad: 'string'}
+]);
+var bootp_vendor4 = sp.build([       
+    { vendor4: {0:'uint8', 1:'uint8', 2:'uint8', 3:'uint8', 4:'uint8'}}, 
     { pad: 'string'}
 ]);
 
@@ -352,8 +360,10 @@ function make_bootp(server_name, file_name, xid_, hw_dest, BB_ip, serverIP){
         { bootfile7: filename.slice(54,63)},
         { bootfile8: filename.slice(63,72)},
     ];
-    var vendor1 = [ { vendor1: [ 99, 130, 83, 99, 1, 4, 255, 255, 255] } ];
-    var vendor2 = [ { vendor2: [ 0, 3, 4, 192, 168, 1, 9, 0xFF] } ];
+    var vendor1 = [ { vendor1: [ 99, 130, 83, 99, 53, 1, 5, 1, 4] } ];  // 4 Byte MAGIC COOKIE and DHCP OPTIONS
+    var vendor2 = [ { vendor2: [ 225, 255, 255, 0, 3, 4, 192, 168, 1] } ];
+    var vendor3 = [ { vendor3: [ 9, 51, 4, 255, 255, 255, 255, 54, 4]}];
+    var vendor4 = [ { vendor4: [192, 168, 1, 9, 0xFF]}];
     var buf1 = fix_buff(bootp1.encode(bootp_1));
     var buf2 = fix_buff(bootp2.encode(bootp_2));
     var buf2_ = Buffer.alloc(10);           // Remaining 10 bytes out of 16 of hwaddr
@@ -362,9 +372,11 @@ function make_bootp(server_name, file_name, xid_, hw_dest, BB_ip, serverIP){
     var buf4 = fix_buff(bootp_bootfile.encode(bootfile));
     var buf4_ = Buffer.alloc(56);          // Remaining 56 bytes out of 128 of bootfile
     var buf5 = fix_buff(bootp_vendor1.encode(vendor1));
-    var buf5_ = fix_buff(bootp_vendor2.encode(vendor2));
-    var buf5__ = Buffer.alloc(47);           // Remaining 47 bytes out of 64 of vendor
-    return Buffer.concat([buf1, buf2, buf2_, buf3, buf3_, buf4, buf4_, buf5, buf5_, buf5__], 300);
+    var buf5a = fix_buff(bootp_vendor2.encode(vendor2));
+    var buf5b = fix_buff(bootp_vendor3.encode(vendor3));
+    var buf5c = fix_buff(bootp_vendor4.encode(vendor4));
+    var buf5d = Buffer.alloc(32);           // Remaining 32 bytes out of 64 of vendor
+    return Buffer.concat([buf1, buf2, buf2_, buf3, buf3_, buf4, buf4_, buf5, buf5a, buf5b, buf5c, buf5d], 300);
 
 }
 
