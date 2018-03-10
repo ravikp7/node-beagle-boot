@@ -64,11 +64,8 @@ exports.tftpServer = function(serverConfigs){
             case usb.findByIds(ROMVID, ROMPID): foundDevice = 'ROM';
             break;
 
-            case usb.findByIds(SPLVID, SPLPID): {
-                foundDevice = (device.deviceDescriptor.bNumConfigurations == 2)? 'SPL': 'UMS';}
-            break;
-
-            case usb.findByIds(UMSVID, UMSPID): foundDevice = 'UMS';
+            case usb.findByIds(SPLVID, SPLPID):
+                foundDevice = (device.deviceDescriptor.bNumConfigurations == 2)? 'SPL': 'UMS';
             break;
 
             default: foundDevice = 'Device '+device.deviceDescriptor;
