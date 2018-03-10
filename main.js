@@ -70,7 +70,8 @@ exports.tftpServer = function(serverConfigs){
             case usb.findByIds(ROMVID, ROMPID): foundDevice = 'ROM';
             break;
 
-            case usb.findByIds(SPLVID, SPLPID): foundDevice = 'SPL';
+            case usb.findByIds(SPLVID, SPLPID): {
+                foundDevice = (device.deviceDescriptor.bNumConfigurations == 2)? 'SPL': 'UMS';}
             break;
 
             case usb.findByIds(UBOOTVID, UBOOTPID): foundDevice = 'UBOOT';
@@ -86,7 +87,7 @@ exports.tftpServer = function(serverConfigs){
 
         // Setup BOOTP/ARP/TFTP servers
         serverConfigs.forEach(function(server){
-            if(device === usb.findByIds(server.vid, server.pid)){ 
+            if(device === usb.findByIds(server.vid, server.pid) && foundDevice != 'UMS'){ 
                 server.device = device;
                 server.foundDevice = foundDevice;
                 var timeout = (foundDevice == 'ROM')? 0: 500;
