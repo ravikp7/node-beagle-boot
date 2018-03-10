@@ -3,8 +3,6 @@ const ROMPID = 0x6141;
 const BOOTPS = 67;
 const BOOTPC = 68;
 const IPUDP = 17;
-//const SPLVID = 0x0525;
-//const SPLPID = 0xA4A2;
 const SPLVID = 0x0451;
 const SPLPID = 0xd022;
 const ETHIPP = 0x0800;
@@ -14,10 +12,6 @@ const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
 const server_ip = [0xc0, 0xa8, 0x01, 0x09];     // 192.168.1.9
 const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
 const servername = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84];       // ASCII ['B','E','A','G','L','E','B','O','O','T']
-const UMSVID = 0x0451;
-const UMSPID = 0xd022;
-const UBOOTVID = 0x0525;
-const UBOOTPID = 0xa4a5;
 
 // Size of all packets
 const rndisSize = 44;
@@ -72,9 +66,6 @@ exports.tftpServer = function(serverConfigs){
 
             case usb.findByIds(SPLVID, SPLPID): {
                 foundDevice = (device.deviceDescriptor.bNumConfigurations == 2)? 'SPL': 'UMS';}
-            break;
-
-            case usb.findByIds(UBOOTVID, UBOOTPID): foundDevice = 'UBOOT';
             break;
 
             case usb.findByIds(UMSVID, UMSPID): foundDevice = 'UMS';
