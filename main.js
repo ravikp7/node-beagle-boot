@@ -8,7 +8,8 @@ const SPLPID = 0xd022;
 const ETHIPP = 0x0800;
 const ETHARPP = 0x0806;
 const MAXBUF = 450;
-const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
+//const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];  --- hack
+var server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
 const server_ip = [0xc0, 0xa8, 0x01, 0x09];     // 192.168.1.9
 const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
 const servername = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84];       // ASCII ['B','E','A','G','L','E','B','O','O','T']
@@ -65,7 +66,7 @@ exports.tftpServer = function(serverConfigs){
             break;
 
             case usb.findByIds(SPLVID, SPLPID):
-                foundDevice = (device.deviceDescriptor.bNumConfigurations == 2)? 'SPL': 'UMS';
+                foundDevice = 'SPL'; //(device.deviceDescriptor.bNumConfigurations == 2)? 'SPL': 'UMS';
             break;
 
             default: foundDevice = 'Device '+device.deviceDescriptor;
@@ -173,13 +174,19 @@ function transfer(server){
 
     }                      
 
-    // Set endpoints for usb transfer
-    server.inEndpoint = interface.endpoint(interface.endpoints[0].address);
-    server.outEndpoint = interface.endpoint(interface.endpoints[1].address);
+    try{
+        // Set endpoints for usb transfer
+        server.inEndpoint = interface.endpoint(interface.endpoints[0].address);
+        server.outEndpoint = interface.endpoint(interface.endpoints[1].address);
 
-    // Set endpoint transfer type
-    server.inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-    server.outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+        // Set endpoint transfer type
+        server.inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+        server.outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+    }
+    catch(err){
+        emitterMod.emit('error', "Interface disappeared: " +err);
+	return;
+    }
 
     emitter.emit('inTransfer', server);
 }
@@ -191,11 +198,13 @@ emitter.on('inTransfer', function(server){
 
     server.inEndpoint.transfer(MAXBUF, function(error, data){
         if(!error){
+            //console.log("*");
             var request = identifyRequest(data);
 
-            if(request == 'notIdentified') emitter.emit('inTransfer', server);
-
-            else {
+            if(request == 'notIdentified') {
+                emitterMod.emit('error', "Unidentified packet type");
+                emitter.emit('inTransfer', server);
+	    } else {
 
                 if(request != 'TFTP_Data') updateProgress(request + " request received");
                 
@@ -216,6 +225,11 @@ emitter.on('inTransfer', function(server){
                                 updateProgress(server.foundDevice+" TFTP transfer complete");
                             }
                         }
+                        break;
+
+                        case 'NC':
+                            emitter.emit('nc', server, data);
+                            emitter.emit('inTransfer', server);
                         break;
                     }
                 }
@@ -262,11 +276,13 @@ function identifyRequest(buff){
         if (buff[rndisSize + etherSize + 9] == IPUDP){                                   // 0x11 for UDP in IPv4
             
             // UDP, So now checking for BOOTP or TFTP ports
-            var port = rndisSize + etherSize + ipSize;
+            var udpOffset = rndisSize + etherSize + ipSize;
+            var sPort = buff[udpOffset]*0x100 + buff[udpOffset+1];
+            var dPort = buff[udpOffset+2]*0x100 + buff[udpOffset+3];
             
-            if (buff[port+1] == BOOTPC && buff[port+3] == BOOTPS) return 'BOOTP';        // Port 68: BOOTP Client, Port 67: BOOTP Server
+            if (sPort == BOOTPC && dPort == BOOTPS) return 'BOOTP';        // Port 68: BOOTP Client, Port 67: BOOTP Server
 
-            if (buff[port+3] == 69){                                                     // Port 69: TFTP
+            if (dPort == 69){                                                     // Port 69: TFTP
                 
                 // Handling TFTP requests
                 var opcode = buff[rndisSize + etherSize + ipSize + udpSize + 1];
@@ -275,6 +291,9 @@ function identifyRequest(buff){
                 if (opcode == 4) return 'TFTP_Data';                                     // Opcode = 4 for Acknowledgement (ACK)
 
             }
+
+            if (dPort == 6666) return 'NC';                                       // Port 6666: Netconsole
+            emitterMod.emit('error', "Unidentified UDP packet type: sPort=" + sPort + ", dPort=" + dPort);
         }
         
     }
@@ -299,6 +318,7 @@ function processBOOTP(server, data){
     data.copy(ether_buf, 0, rndisSize, MAXBUF);
 
     server.ether = protocols.decode_ether(ether_buf);      // Gets decoded ether packet data
+    server_hwaddr = server.ether.h_dest;  // Hack!!!  <-- overwrite our MAC address
 
     var udpUboot = protocols.parse_udp(udp_buf);       // parsed udp header
 
@@ -365,6 +385,10 @@ emitter.on('processTFTP', function(server, data){
 	}
     });
 
+});
+
+emitter.on('nc', function(server, data){
+    console.log(data);
 });
 
 // Function to process File data for TFTP
