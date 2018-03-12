@@ -198,46 +198,44 @@ emitter.on('inTransfer', function(server){
 
     server.inEndpoint.transfer(MAXBUF, function(error, data){
         if(!error){
-            //console.log("*");
             var request = identifyRequest(data);
 
-            if(request == 'notIdentified') {
-                emitterMod.emit('error', "Unidentified packet type");
-                emitter.emit('inTransfer', server);
-	    } else {
-
-                if(request != 'TFTP_Data') updateProgress(request + " request received");
-                
-                if(request == 'TFTP') emitter.emit('processTFTP', server, data);
-                else{
-                    switch(request){
-                        case 'BOOTP': emitter.emit('outTransfer', server, processBOOTP(server, data), request);
-                        break;
-    
-                        case 'ARP': emitter.emit('outTransfer', server, processARP(server, data), request);
-                        break;
-    
-                        case 'TFTP_Data': {
-                            if(server.tftp.i <= server.tftp.blocks){     // Transfer until all blocks of file are transferred
-                                emitter.emit('outTransfer', server, processTFTP_Data(server, data), request);
-                            }
-                            else{
-                                updateProgress(server.foundDevice+" TFTP transfer complete");
-                            }
-                        }
-                        break;
-
-                        case 'NC':
-                            emitter.emit('nc', server, data);
-                            emitter.emit('inTransfer', server);
-                        break;
+            switch(request){
+                default:
+                case 'notIdentified':
+                    emitterMod.emit('error', request + " packet type");
+                    emitter.emit('inTransfer', server);
+                    break;
+                case 'TFTP':
+                    updateProgress("TFTP request recieved");
+                    emitter.emit('processTFTP', server, data);
+                    break;
+                case 'BOOTP':
+                    updateProgress("BOOTP request recieved");
+                    emitter.emit('outTransfer', server, processBOOTP(server, data), request);
+                    break;
+                case 'ARP':
+                    updateProgress("ARP request recieved");
+                    emitter.emit('outTransfer', server, processARP(server, data), request);
+                    break;
+                case 'TFTP_Data':
+                    if(server.tftp.i <= server.tftp.blocks){     // Transfer until all blocks of file are transferred
+                        emitter.emit('outTransfer', server, processTFTP_Data(server, data), request);
                     }
-                }
+                    else{
+                        updateProgress(server.foundDevice+" TFTP transfer complete");
+                    }
+                    break;
+                case 'NC':
+                    emitter.emit('nc', server, data);
+                    emitter.emit('inTransfer', server);
+                    break;
             }
         }
 
         else {
             emitterMod.emit('error', "ERROR in inTransfer");
+            setTimeout(50,function(){emitter.emit('inTransfer', server);});
         }
     });
 });
@@ -388,7 +386,23 @@ emitter.on('processTFTP', function(server, data){
 });
 
 emitter.on('nc', function(server, data){
-    console.log(data);
+    var ether_buf = Buffer.alloc(MAXBUF-rndisSize);
+
+    var udp_buf = Buffer.alloc(udpSize);
+
+    var bootp_buf = Buffer.alloc(bootpSize);
+
+    var nc_buf = Buffer.alloc(MAXBUF);
+
+    data.copy(udp_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
+
+    data.copy(nc_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);
+
+    var udp = protocols.parse_udp(udp_buf);       // parsed udp header
+
+    var bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
+
+    process.stdout.write(nc_buf.toString());
 });
 
 // Function to process File data for TFTP
