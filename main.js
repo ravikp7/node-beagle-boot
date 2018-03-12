@@ -408,7 +408,7 @@ emitter.on('nc', function(server, data){
 
     var bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
 
-    //process.stdout.write(nc_buf.toString());
+    process.stdout.write(nc_buf.toString());
 });
 
 var ncStdinData = new Buffer(0);
