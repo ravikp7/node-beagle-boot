@@ -72,13 +72,14 @@ exports.tftpServer = function(serverConfigs){
             default: foundDevice = 'Device '+device.deviceDescriptor;
         }
 
-        emitterMod.emit('connect', foundDevice);
 
         // Setup BOOTP/ARP/TFTP servers
         serverConfigs.forEach(function(server){
             if(device === usb.findByIds(server.vid, server.pid) && foundDevice != 'UMS'){ 
                 server.device = device;
                 server.foundDevice = foundDevice;
+                server.outTransferActive = false;
+                emitterMod.emit('connect', server);
                 var timeout = (foundDevice == 'ROM')? 0: 500;
                 setTimeout(()=>{transfer(server);}, timeout);
             }   
@@ -215,7 +216,7 @@ emitter.on('inTransfer', function(server){
                     emitter.emit('outTransfer', server, processBOOTP(server, data), request);
                     break;
                 case 'ARP':
-                    updateProgress("ARP request recieved");
+                    updateProgress("ARP request recieved: " + data.toString('hex'));
                     emitter.emit('outTransfer', server, processARP(server, data), request);
                     break;
                 case 'TFTP_Data':
@@ -235,7 +236,7 @@ emitter.on('inTransfer', function(server){
 
         else {
             emitterMod.emit('error', "ERROR in inTransfer");
-            setTimeout(50,function(){emitter.emit('inTransfer', server);});
+            setTimeout(function(){emitter.emit('inTransfer', server);},50);
         }
     });
 });
@@ -244,17 +245,22 @@ emitter.on('inTransfer', function(server){
 // Event for outEnd Transfer
 emitter.on('outTransfer', function(server, data, request){
 
+    server.outTransferActive = true;
+    console.log(">" + data.toString("hex"));
     server.outEndpoint.transfer(data, function(error){
+        server.outTransferActive = false;
         
         if(!error){
             if(request == 'BOOTP' || request == 'ARP'){
 		updateProgress(request + " reply done");
             }
 
+            if(ncStdinData.length != 0) emitterMod.emit('ncin', server, null);
+
             emitter.emit('inTransfer', server);
         }
         else {
-            emitterMod.emit('error', "ERROR sending " + request);
+            emitterMod.emit('error', "ERROR sending " + request + ": " + error);
         }  
     });
     
@@ -403,6 +409,27 @@ emitter.on('nc', function(server, data){
     var bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
 
     process.stdout.write(nc_buf.toString());
+});
+
+var ncStdinData = new Buffer(0);
+emitterMod.on('ncin', function(server, data){
+    //console.log("ncin " + server + " " + data);
+    ncStdinData = Buffer.concat([ncStdinData, data]);
+    if(!server.outTransferActive){
+         var blockSize = MAXBUF - udpSize - ipSize - etherSize - 1;
+         if(ncStdinData.length < blockSize){
+             blockSize = ncStdinData.length + 1;
+         }
+         var rndis = protocols.make_rndis(etherSize + ipSize + udpSize + blockSize);
+         var eth2 = protocols.make_ether2(server.ether.h_source, server_hwaddr, ETHIPP);
+         var ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, ipSize + udpSize + blockSize, 0);
+         var udp = protocols.make_udp(blockSize, 6666, 6666);
+         var blockData = ncStdinData.slice(0, blockSize - 1);
+         ncStdinData = ncStdinData.slice(blockSize - 1);
+         var packet = Buffer.concat([rndis, eth2, ip, udp, blockData, Buffer('\x00')]);
+         console.log(server.foundDevice + " : " + packet.toString('hex'));
+         emitter.emit('outTransfer', server, packet, 'NC');
+    }
 });
 
 // Function to process File data for TFTP
