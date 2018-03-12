@@ -216,7 +216,7 @@ emitter.on('inTransfer', function(server){
                     emitter.emit('outTransfer', server, processBOOTP(server, data), request);
                     break;
                 case 'ARP':
-                    updateProgress("ARP request recieved: " + data.toString('hex'));
+                    //updateProgress("ARP request recieved: ");
                     emitter.emit('outTransfer', server, processARP(server, data), request);
                     break;
                 case 'TFTP_Data':
@@ -246,12 +246,12 @@ emitter.on('inTransfer', function(server){
 emitter.on('outTransfer', function(server, data, request){
 
     server.outTransferActive = true;
-    console.log(">" + data.toString("hex"));
     server.outEndpoint.transfer(data, function(error){
         server.outTransferActive = false;
         
         if(!error){
-            if(request == 'BOOTP' || request == 'ARP'){
+            //if(request == 'BOOTP' || request == 'ARP'){
+            if(request == 'BOOTP'){
 		updateProgress(request + " reply done");
             }
 
@@ -408,7 +408,7 @@ emitter.on('nc', function(server, data){
 
     var bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
 
-    process.stdout.write(nc_buf.toString());
+    //process.stdout.write(nc_buf.toString());
 });
 
 var ncStdinData = new Buffer(0);
@@ -416,18 +416,18 @@ emitterMod.on('ncin', function(server, data){
     //console.log("ncin " + server + " " + data);
     ncStdinData = Buffer.concat([ncStdinData, data]);
     if(!server.outTransferActive){
-         var blockSize = MAXBUF - udpSize - ipSize - etherSize - 1;
+         var blockSize = MAXBUF - udpSize - ipSize - etherSize;
          if(ncStdinData.length < blockSize){
-             blockSize = ncStdinData.length + 1;
+             blockSize = ncStdinData.length;
          }
          var rndis = protocols.make_rndis(etherSize + ipSize + udpSize + blockSize);
          var eth2 = protocols.make_ether2(server.ether.h_source, server_hwaddr, ETHIPP);
          var ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, ipSize + udpSize + blockSize, 0);
          var udp = protocols.make_udp(blockSize, 6666, 6666);
-         var blockData = ncStdinData.slice(0, blockSize - 1);
-         ncStdinData = ncStdinData.slice(blockSize - 1);
-         var packet = Buffer.concat([rndis, eth2, ip, udp, blockData, Buffer('\x00')]);
-         console.log(server.foundDevice + " : " + packet.toString('hex'));
+         var blockData = ncStdinData.slice(0, blockSize);
+         ncStdinData = ncStdinData.slice(blockSize);
+         var packet = Buffer.concat([rndis, eth2, ip, udp, blockData]);
+         //console.log(server.foundDevice + " : " + packet.toString('hex'));
          emitter.emit('outTransfer', server, packet, 'NC');
     }
 });
