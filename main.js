@@ -235,7 +235,7 @@ emitter.on('inTransfer', function(server){
         }
 
         else {
-            emitterMod.emit('error', "ERROR in inTransfer");
+            //emitterMod.emit('error', "ERROR in inTransfer");
             setTimeout(function(){emitter.emit('inTransfer', server);},50);
         }
     });
@@ -260,7 +260,7 @@ emitter.on('outTransfer', function(server, data, request){
             emitter.emit('inTransfer', server);
         }
         else {
-            emitterMod.emit('error', "ERROR sending " + request + ": " + error);
+            //emitterMod.emit('error', "ERROR sending " + request + ": " + error);
         }  
     });
     
