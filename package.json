@@ -13,7 +13,7 @@
     "jshint": "2.9.5"
   },
   "scripts": {
-    "start": "node ums.js",
+    "start": "node nc.js",
     "test": "./node_modules/.bin/jshint main.js"
   },
   "repository": {

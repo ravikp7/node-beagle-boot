@@ -131,7 +131,7 @@ var arphdr_e = sp.build([
 ])
 
 
-// TFTP packet
+// TFTP packet --- this is only for ACK packets
 var tftp = sp.build([
     { opcode: 'uint16'},                    // Operation code, here 3 for read/write next block of data
     { blk_number: 'uint16'},                // Block number
@@ -139,6 +139,13 @@ var tftp = sp.build([
 ]);
 
 
+// TFTP ERROR packet
+var tftp_error = sp.build([
+    { opcode: 'uint16'},
+    { err_code: 'uint16'},
+    { err_mesg: 'string'},
+    { pad: 'string'}
+]);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////// Headers for parsing (Binary-Praser) /////////////////////////////////////////
@@ -406,7 +413,7 @@ function make_arp(opcode, hw_source, ip_source, hw_dest, ip_dest){
 } 
 
 
-// Function for TFTP packet
+// Function for TFTP packet --- this is only for ACK packets
 function make_tftp(opcode, blk_number){
     var tftp_data = [
         { opcode: opcode},
@@ -415,6 +422,15 @@ function make_tftp(opcode, blk_number){
     return fix_buff(tftp.encode(tftp_data));
 }
 
+// Function for TFTP error packet
+function make_tftp_error(opcode, err_code, desc){
+    var my_tftp_error = [
+        { opcode: 5 },
+        { err_code: err_code },
+        { err_msg: desc },
+    ];
+    return fix_buff(tftp_error.encode(my_tftp_error));
+}
 
 
 
@@ -461,4 +477,5 @@ exports.parse_arp = parse_arp;
 exports.make_arp = make_arp;
 exports.parse_udp = parse_udp;
 exports.make_tftp = make_tftp;
+exports.make_tftp_error = make_tftp_error;
 exports.parse_bootp = parse_bootp;

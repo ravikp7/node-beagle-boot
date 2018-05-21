@@ -52,45 +52,26 @@ npm start
 It should now boot BB into USB Mass Storage Mode.
 
 ___
-## U-boot binary build instructions:
-* Use your preferred Cross Compiler or set up one from [instructions here](http://eewiki.net/display/linuxonarm/BeagleBone+Black#BeagleBoneBlack-ARMCrossCompiler:GCC)
+## Target binary build instructions:
 
-* Get the latest U-boot sources and checkout v2018.03-rc4
-```
-git clone https://github.com/u-boot/u-boot.git
-cd u-boot
-git checkout v2018.03-rc4 -b tmp
-```
-* Apply RCN's Patches
-```
-wget https://raw.githubusercontent.com/RobertCNelson/Bootloader-Builder/master/patches/v2018.03-rc4/0001-am335x_evm-uEnv.txt-bootz-n-fixes.patch
-wget https://raw.githubusercontent.com/RobertCNelson/Bootloader-Builder/master/patches/v2018.03-rc4/0002-U-Boot-BeagleBone-Cape-Manager.patch
+Use [Buildroot](https://buildroot.net) to build your target image.
 
-git am 0001-am335x_evm-uEnv.txt-bootz-n-fixes.patch
-git am 0002-U-Boot-BeagleBone-Cape-Manager.patch
-```
-* Apply default UMS(USB Mass Storage) Patch
-```
-wget https://raw.githubusercontent.com/ravikp7/node-beagle-boot/master/ums-patch.diff
-git apply ums-patch.diff
-```
-* Run the following command for config:
-```
-make ARCH=arm CROSS_COMPILE=${CC} am335x_evm_usbspl_defconfig
-```
-* To enable USB Mass Storage, run command
-```
-make menuconfig
-```
-Select `Command Line Interface` -> `Device Access Commands` -> `UMS usb mass storage`
+* Get the PocketBeagle NETCONSOLE sources for Buildroot
 
-Then 'Save' and 'Exit'
+The latest commit tested at this writing is 15721981162c23f7a9744d119f7dbb6f335fcbd8.
+
+```sh
+git clone https://github.com/jadonk/buildroot
+cd buildroot
+git checkout add-pocketbeagle
+```
 
 * Run the following command to compile:
 ```
-make ARCH=arm CROSS_COMPILE=${CC}
+make pocketbeagle_defconfig
+make
 ```
-Now SPL binary is `spl/u-boot-spl.bin` and uboot binary is `u-boot.img`
+Now SPL binary is `output/images/u-boot-spl.bin` and uboot binary is `output/images/u-boot.img`
 
 ___
 ## API Documentation

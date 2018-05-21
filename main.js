@@ -8,7 +8,8 @@ const SPLPID = 0xd022;
 const ETHIPP = 0x0800;
 const ETHARPP = 0x0806;
 const MAXBUF = 450;
-const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
+//const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];  --- hack
+var server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
 const server_ip = [0xc0, 0xa8, 0x01, 0x09];     // 192.168.1.9
 const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
 const servername = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84];       // ASCII ['B','E','A','G','L','E','B','O','O','T']
@@ -64,23 +65,21 @@ exports.tftpServer = function(serverConfigs){
             case usb.findByIds(ROMVID, ROMPID): foundDevice = 'ROM';
             break;
 
-            case usb.findByIds(SPLVID, SPLPID): {
-                foundDevice = (device.deviceDescriptor.bNumConfigurations == 2)? 'SPL': 'UMS';}
-            break;
-
-            case usb.findByIds(UMSVID, UMSPID): foundDevice = 'UMS';
+            case usb.findByIds(SPLVID, SPLPID):
+                foundDevice = 'SPL'; //(device.deviceDescriptor.bNumConfigurations == 2)? 'SPL': 'UMS';
             break;
 
             default: foundDevice = 'Device '+device.deviceDescriptor;
         }
 
-        emitterMod.emit('connect', foundDevice);
 
         // Setup BOOTP/ARP/TFTP servers
         serverConfigs.forEach(function(server){
             if(device === usb.findByIds(server.vid, server.pid) && foundDevice != 'UMS'){ 
                 server.device = device;
                 server.foundDevice = foundDevice;
+                server.outTransferActive = false;
+                emitterMod.emit('connect', server);
                 var timeout = (foundDevice == 'ROM')? 0: 500;
                 setTimeout(()=>{transfer(server);}, timeout);
             }   
@@ -100,29 +99,40 @@ function transfer(server){
     if(server.foundDevice == 'ROM') progress.percent = progress.increment;
     updateProgress(server.foundDevice +" =>");
 
-    if(server.foundDevice == 'SPL' && platform != 'linux'){
-        server.device.open(false);
-        server.device.setConfiguration(2, function(err){if(err) emitterMod.emit('error', "Can't set configuration " +err);});
-        server.device.__open();
-        server.device.__claimInterface(0);
-    }
-
-    server.device.open();
-    var interface = server.device.interface(1);    // Select interface 1 for BULK transfers
-
-    if(platform != 'win32'){                // Not supported in Windows
-        // Detach Kernel Driver
-        if(interface && interface.isKernelDriverActive()){
-            interface.detachKernelDriver();
+    try {
+        if(server.foundDevice == 'SPL' && platform != 'linux'){
+            server.device.open(false);
+            server.device.setConfiguration(2, function(err){
+                if(err) emitterMod.emit('error', "Can't set configuration " +err);
+                server.device.__open();
+                onOpen(server);
+            });
+        } else {
+            server.device.open();
+            onOpen(server);
         }
     }
+    catch(ex){
+        emitterMod.emit('error', "Can't open device " +ex);
+    }
+}
 
+function onOpen(server){
     try{
+        var interface = server.device.interface(1);    // Select interface 1 for BULK transfers
+
+        if(platform != 'win32'){                // Not supported in Windows
+            // Detach Kernel Driver
+            if(interface && interface.isKernelDriverActive()){
+                interface.detachKernelDriver();
+            }
+        }
+
         interface.claim();
     }
-
     catch(err){
         emitterMod.emit('error', "Can't claim interface " +err);
+	return;
     }
 
     updateProgress("Interface claimed");
@@ -176,13 +186,19 @@ function transfer(server){
 
     }                      
 
-    // Set endpoints for usb transfer
-    server.inEndpoint = interface.endpoint(interface.endpoints[0].address);
-    server.outEndpoint = interface.endpoint(interface.endpoints[1].address);
+    try{
+        // Set endpoints for usb transfer
+        server.inEndpoint = interface.endpoint(interface.endpoints[0].address);
+        server.outEndpoint = interface.endpoint(interface.endpoints[1].address);
 
-    // Set endpoint transfer type
-    server.inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-    server.outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+        // Set endpoint transfer type
+        server.inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+        server.outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+    }
+    catch(err){
+        emitterMod.emit('error', "Interface disappeared: " +err);
+	return;
+    }
 
     emitter.emit('inTransfer', server);
 }
@@ -196,37 +212,42 @@ emitter.on('inTransfer', function(server){
         if(!error){
             var request = identifyRequest(data);
 
-            if(request == 'notIdentified') emitter.emit('inTransfer', server);
-
-            else {
-
-                if(request != 'TFTP_Data') updateProgress(request + " request received");
-                
-                if(request == 'TFTP') emitter.emit('processTFTP', server, data);
-                else{
-                    switch(request){
-                        case 'BOOTP': emitter.emit('outTransfer', server, processBOOTP(server, data), request);
-                        break;
-    
-                        case 'ARP': emitter.emit('outTransfer', server, processARP(server, data), request);
-                        break;
-    
-                        case 'TFTP_Data': {
-                            if(server.tftp.i <= server.tftp.blocks){     // Transfer until all blocks of file are transferred
-                                emitter.emit('outTransfer', server, processTFTP_Data(server, data), request);
-                            }
-                            else{
-                                updateProgress(server.foundDevice+" TFTP transfer complete");
-                            }
-                        }
-                        break;
+            switch(request){
+                default:
+                case 'notIdentified':
+                    emitterMod.emit('error', request + " packet type");
+                    emitter.emit('inTransfer', server);
+                    break;
+                case 'TFTP':
+                    updateProgress("TFTP request recieved");
+                    emitter.emit('processTFTP', server, data);
+                    break;
+                case 'BOOTP':
+                    updateProgress("BOOTP request recieved");
+                    emitter.emit('outTransfer', server, processBOOTP(server, data), request);
+                    break;
+                case 'ARP':
+                    //updateProgress("ARP request recieved: ");
+                    emitter.emit('outTransfer', server, processARP(server, data), request);
+                    break;
+                case 'TFTP_Data':
+                    if(server.tftp.i <= server.tftp.blocks){     // Transfer until all blocks of file are transferred
+                        emitter.emit('outTransfer', server, processTFTP_Data(server, data), request);
                     }
-                }
+                    else{
+                        updateProgress(server.foundDevice+" TFTP transfer complete");
+                    }
+                    break;
+                case 'NC':
+                    emitter.emit('nc', server, data);
+                    emitter.emit('inTransfer', server);
+                    break;
             }
         }
 
         else {
-            emitterMod.emit('error', "ERROR in inTransfer");
+            //emitterMod.emit('error', "ERROR in inTransfer");
+            setTimeout(function(){emitter.emit('inTransfer', server);},50);
         }
     });
 });
@@ -235,17 +256,22 @@ emitter.on('inTransfer', function(server){
 // Event for outEnd Transfer
 emitter.on('outTransfer', function(server, data, request){
 
+    server.outTransferActive = true;
     server.outEndpoint.transfer(data, function(error){
+        server.outTransferActive = false;
         
         if(!error){
-            if(request == 'BOOTP' || request == 'ARP'){
+            //if(request == 'BOOTP' || request == 'ARP'){
+            if(request == 'BOOTP'){
 		updateProgress(request + " reply done");
             }
+
+            if(ncStdinData.length != 0) emitterMod.emit('ncin', server, null);
 
             emitter.emit('inTransfer', server);
         }
         else {
-            emitterMod.emit('error', "ERROR sending " + request);
+            //emitterMod.emit('error', "ERROR sending " + request + ": " + error);
         }  
     });
     
@@ -265,11 +291,13 @@ function identifyRequest(buff){
         if (buff[rndisSize + etherSize + 9] == IPUDP){                                   // 0x11 for UDP in IPv4
             
             // UDP, So now checking for BOOTP or TFTP ports
-            var port = rndisSize + etherSize + ipSize;
+            var udpOffset = rndisSize + etherSize + ipSize;
+            var sPort = buff[udpOffset]*0x100 + buff[udpOffset+1];
+            var dPort = buff[udpOffset+2]*0x100 + buff[udpOffset+3];
             
-            if (buff[port+1] == BOOTPC && buff[port+3] == BOOTPS) return 'BOOTP';        // Port 68: BOOTP Client, Port 67: BOOTP Server
+            if (sPort == BOOTPC && dPort == BOOTPS) return 'BOOTP';        // Port 68: BOOTP Client, Port 67: BOOTP Server
 
-            if (buff[port+3] == 69){                                                     // Port 69: TFTP
+            if (dPort == 69){                                                     // Port 69: TFTP
                 
                 // Handling TFTP requests
                 var opcode = buff[rndisSize + etherSize + ipSize + udpSize + 1];
@@ -278,6 +306,9 @@ function identifyRequest(buff){
                 if (opcode == 4) return 'TFTP_Data';                                     // Opcode = 4 for Acknowledgement (ACK)
 
             }
+
+            if (dPort == 6666) return 'NC';                                       // Port 6666: Netconsole
+            emitterMod.emit('error', "Unidentified UDP packet type: sPort=" + sPort + ", dPort=" + dPort);
         }
         
     }
@@ -302,6 +333,7 @@ function processBOOTP(server, data){
     data.copy(ether_buf, 0, rndisSize, MAXBUF);
 
     server.ether = protocols.decode_ether(ether_buf);      // Gets decoded ether packet data
+    server_hwaddr = server.ether.h_dest;  // Hack!!!  <-- overwrite our MAC address
 
     var udpUboot = protocols.parse_udp(udp_buf);       // parsed udp header
 
@@ -357,21 +389,65 @@ emitter.on('processTFTP', function(server, data){
 
     fs.readFile(server.filePath, function(error, file_data){
         if(!error){
-            server.tftp.blocks = Math.ceil(file_data.length/512);         // Total number of blocks of file
+            server.tftp.blocks = Math.ceil((file_data.length+1)/512);         // Total number of blocks of file
             server.tftp.start = 0;
             server.tftp.fileData = file_data;
             emitter.emit('outTransfer', server, processTFTP_Data(server, data), 'TFTP');
         }
-        
-        else emitterMod.emit('error', "Error reading "+server.filePath+" : "+error);
+        else{
+            emitter.emit('outTransfer', server, processTFTP_Error(server, data), 'TFTP');
+	    emitterMod.emit('error', "Error reading "+server.filePath+" : "+error);
+	}
     });
 
+});
+
+emitter.on('nc', function(server, data){
+    var ether_buf = Buffer.alloc(MAXBUF-rndisSize);
+
+    var udp_buf = Buffer.alloc(udpSize);
+
+    var bootp_buf = Buffer.alloc(bootpSize);
+
+    var nc_buf = Buffer.alloc(MAXBUF);
+
+    data.copy(udp_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
+
+    data.copy(nc_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);
+
+    var udp = protocols.parse_udp(udp_buf);       // parsed udp header
+
+    var bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
+
+    process.stdout.write(nc_buf.toString());
+});
+
+var ncStdinData = new Buffer(0);
+emitterMod.on('ncin', function(server, data){
+    //console.log("ncin " + server + " " + data);
+    ncStdinData = Buffer.concat([ncStdinData, data]);
+    if(!server.outTransferActive){
+         var blockSize = MAXBUF - udpSize - ipSize - etherSize;
+         if(ncStdinData.length < blockSize){
+             blockSize = ncStdinData.length;
+         }
+         var rndis = protocols.make_rndis(etherSize + ipSize + udpSize + blockSize);
+         var eth2 = protocols.make_ether2(server.ether.h_source, server_hwaddr, ETHIPP);
+         var ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, ipSize + udpSize + blockSize, 0);
+         var udp = protocols.make_udp(blockSize, 6666, 6666);
+         var blockData = ncStdinData.slice(0, blockSize);
+         ncStdinData = ncStdinData.slice(blockSize);
+         var packet = Buffer.concat([rndis, eth2, ip, udp, blockData]);
+         //console.log(server.foundDevice + " : " + packet.toString('hex'));
+         emitter.emit('outTransfer', server, packet, 'NC');
+    }
 });
 
 // Function to process File data for TFTP
 function processTFTP_Data(server, data){
 
-    var blockSize = (server.tftp.i==server.tftp.blocks)? server.tftp.fileData.length - (server.tftp.blocks-1)*512 : 512;  // Different block size for last block
+    var blockSize = server.tftp.fileData.length - server.tftp.start;
+    if(blockSize > 512) blockSize = 512;
 
     var blockData = Buffer.alloc(blockSize);
     server.tftp.fileData.copy(blockData, 0, server.tftp.start, server.tftp.start + blockSize);                            // Copying data to block
@@ -383,6 +459,15 @@ function processTFTP_Data(server, data){
     var tftp = protocols.make_tftp(3, server.tftp.i);
     server.tftp.i++;
     return Buffer.concat([rndis, server.tftp.eth2, ip, udp, tftp, blockData], rndisSize + etherSize + ipSize + udpSize + tftpSize + blockSize);
+}
+
+function processTFTP_Error(server, data){
+    var error_msg = "File not found";
+    var rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + error_msg.length + 1);
+    var ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, ipSize + udpSize + tftpSize + error_msg.length + 1, 0);
+    var udp = protocols.make_udp(tftpSize + error_msg.length + 1, server.tftp.receivedUdp.udpDest, server.tftp.receivedUdp.udpSrc);
+    var tftp = protocols.make_tftp(5, 1, error_msg);
+    return Buffer.concat([rndis, server.tftp.eth2, ip, udp, tftp], rndisSize + etherSize + ipSize + udpSize + tftpSize + error_msg.length + 1);
 }
 
 // Function for progress update
