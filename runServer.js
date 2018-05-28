@@ -14,7 +14,7 @@ emitter.on('error', function(error){
 });
 
 var lastServer;
-emitter.on('connect', function(server){
+emitter.on('ncStarted', function(server){
   lastServer = server;
 });
 

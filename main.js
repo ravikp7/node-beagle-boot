@@ -69,10 +69,10 @@ exports.tftpServer = (serverConfigs) => {
         foundDevice = 'ROM';
         break;
       case usb.findByIds(SPLVID, SPLPID):
-        foundDevice = 'SPL'; //(device.deviceDescriptor.bNumConfigurations == 2)? 'SPL': 'UMS';
+        foundDevice = (device.deviceDescriptor.bNumConfigurations == 2) ? 'SPL' : 'UMS';
         break;
       default:
-        foundDevice = 'Device ' + device.deviceDescriptor;
+        foundDevice = `Device ${device.deviceDescriptor}`;
     }
 
     // Setup BOOTP/ARP/TFTP servers
@@ -80,8 +80,10 @@ exports.tftpServer = (serverConfigs) => {
       if (device === usb.findByIds(server.vid, server.pid) && foundDevice != 'UMS') {
         server.device = device;
         server.foundDevice = foundDevice;
-        server.outTransferActive = false;
-        emitterMod.emit('connect', server);
+        //emitterMod.emit('ncStarted', server);
+        if (server.foundDevice === 'SPL') {
+          server.isNcActive = false;
+        }
         const timeout = (foundDevice == 'ROM') ? 0 : 500;
         setTimeout(() => {
           transfer(server);
@@ -101,7 +103,7 @@ exports.tftpServer = (serverConfigs) => {
 // Function for device initialization
 const transfer = (server) => {
   if (server.foundDevice == 'ROM') progress.percent = progress.increment;
-  updateProgress(server.foundDevice + ' =>');
+  updateProgress(`${server.foundDevice} ->`);
   try {
     if (server.foundDevice == 'SPL' && platform != 'linux') {
       server.device.open(false);
@@ -337,6 +339,10 @@ emitter.on('nc', (server, data) => {
   const nc_buf = Buffer.alloc(MAXBUF);
   data.copy(nc_buf, 0, RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE, MAXBUF);
   process.stdout.write(nc_buf.toString());
+  if (!server.isNcActive) {
+    server.isNcActive = true;
+    emitterMod.emit('ncStarted', server);
+  }
 });
 
 // Event for sending netconsole commands
