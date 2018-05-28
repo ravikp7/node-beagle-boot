@@ -74,6 +74,7 @@ exports.tftpServer = (serverConfigs) => {
       default:
         foundDevice = `Device ${device.deviceDescriptor}`;
     }
+    emitterMod.emit('connect', foundDevice);
 
     // Setup BOOTP/ARP/TFTP servers
     serverConfigs.forEach((server) => {
