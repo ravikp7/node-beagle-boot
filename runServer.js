@@ -6,26 +6,26 @@ console.log('Server started');
 console.log('Connect BeagleBone to get started');
 
 emitter.on('progress', function(status){
-    console.log(status);
+  console.log(status);
 });
 
 emitter.on('error', function(error){
-    console.log('Error: '+error);
+  console.log('Error: '+error);
 });
 
 var lastServer;
 emitter.on('connect', function(server){
-    lastServer = server;
+  lastServer = server;
 });
 
-process.stdin.setEncoding("ascii");
+process.stdin.setEncoding('ascii');
 process.stdin.on('readable', function(){
-     var data = process.stdin.read();
-     if(data != null) {
-        if(lastServer) {
-            emitter.emit('ncin', lastServer, new Buffer(data));
-        }
+  var data = process.stdin.read();
+  if(data != null) {
+    if(lastServer) {
+      emitter.emit('ncin', lastServer, new Buffer(data));
     }
+  }
 });
 
 

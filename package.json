@@ -1,7 +1,7 @@
 {
   "name": "beagle-boot",
   "version": "1.2.1",
-  "description": "A bootloader server for BeagleBone hardware to boot it into mass storage mode",
+  "description": "A bootloader server for BeagleBone hardware based on AM335x",
   "main": "main.js",
   "dependencies": {
     "usb": "1.3.1",
@@ -10,11 +10,11 @@
     "endian-toggle": "0.0.0"
   },
   "devDependencies": {
-    "jshint": "2.9.5"
+    "eslint": "^4.19.1"
   },
   "scripts": {
-    "start": "node nc.js",
-    "test": "./node_modules/.bin/jshint main.js"
+    "start": "node runServer.js",
+    "test": "./node_modules/.bin/eslint ."
   },
   "repository": {
     "type": "git",
