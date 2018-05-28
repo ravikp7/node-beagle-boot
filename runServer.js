@@ -23,7 +23,7 @@ process.stdin.on('readable', function(){
   var data = process.stdin.read();
   if(data != null) {
     if(lastServer) {
-      emitter.emit('ncin', lastServer, new Buffer(data));
+      emitter.emit('ncin', lastServer, data);
     }
   }
 });

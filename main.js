@@ -347,7 +347,8 @@ emitter.on('nc', (server, data) => {
 });
 
 // Event for sending netconsole commands
-emitterMod.on('ncin', (server, data) => {
+emitterMod.on('ncin', (server, command) => {
+  const data = Buffer.from(command);
   const blockSize = data.length;
   const ncStdinData = Buffer.alloc(blockSize);
   data.copy(ncStdinData, 0, 0, blockSize);
