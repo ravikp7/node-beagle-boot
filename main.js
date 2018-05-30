@@ -194,6 +194,9 @@ const onOpen = (server) => {
     emitterMod.emit('error', `Interface disappeared: ${err}`);
     return;
   }
+
+  // Start polling the In Endpoint for transfers
+  server.inEndpoint.startPoll(1, MAXBUF);
   emitter.emit('inTransfer', server);
 };
 
@@ -201,42 +204,38 @@ const onOpen = (server) => {
 
 // Event for inEnd transfer
 emitter.on('inTransfer', (server) => {
-  server.inEndpoint.transfer(MAXBUF, (error, data) => {
-    if (!error) {
-      const request = identifyRequest(data);
-      switch (request) {
-        case 'notIdentified':
-          emitterMod.emit('error', `${request} packet type`);
-          emitter.emit('inTransfer', server);
-          break;
-        case 'TFTP':
-          updateProgress('TFTP request recieved');
-          emitter.emit('processTFTP', server, data);
-          break;
-        case 'BOOTP':
-          updateProgress('BOOTP request recieved');
-          emitter.emit('outTransfer', server, processBOOTP(server, data), request);
-          break;
-        case 'ARP':
-          emitter.emit('outTransfer', server, processARP(server, data), request);
-          break;
-        case 'TFTP_Data':
-          if (server.tftp.i <= server.tftp.blocks) { // Transfer until all blocks of file are transferred
-            emitter.emit('outTransfer', server, processTFTP_Data(server), request);
-          } else {
-            updateProgress(`${server.foundDevice} TFTP transfer complete`);
-          }
-          break;
-        case 'NC':
-          emitter.emit('nc', server, data);
-          emitter.emit('inTransfer', server);
-          break;
-      }
-    } else {
-      setTimeout(() => {
-        emitter.emit('inTransfer', server);
-      }, 50);
+  server.inEndpoint.on('data', (data) => {
+    const request = identifyRequest(data);
+    switch (request) {
+      case 'notIdentified':
+        emitterMod.emit('error', `${request} packet type`);
+        break;
+      case 'TFTP':
+        updateProgress('TFTP request recieved');
+        emitter.emit('processTFTP', server, data);
+        break;
+      case 'BOOTP':
+        updateProgress('BOOTP request recieved');
+        emitter.emit('outTransfer', server, processBOOTP(server, data), request);
+        break;
+      case 'ARP':
+        emitter.emit('outTransfer', server, processARP(server, data), request);
+        break;
+      case 'TFTP_Data':
+        if (server.tftp.i <= server.tftp.blocks) { // Transfer until all blocks of file are transferred
+          emitter.emit('outTransfer', server, processTFTP_Data(server), request);
+        } else {
+          updateProgress(`${server.foundDevice} TFTP transfer complete`);
+          server.inEndpoint.stopPoll();
+        }
+        break;
+      case 'NC':
+        emitter.emit('nc', server, data);
+        break;
     }
+  });
+  server.inEndpoint.on('error', (error) => {
+    console.log(error);
   });
 });
 
@@ -246,7 +245,6 @@ emitter.on('outTransfer', (server, data, request) => {
   server.outEndpoint.transfer(data, (error) => {
     if (!error) {
       if (request == 'BOOTP') updateProgress(`${request} reply done`);
-      emitter.emit('inTransfer', server);
     }
   });
 });
