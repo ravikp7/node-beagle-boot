@@ -1,7 +1,8 @@
 var sp = require('schemapack');             // Serialization module
 var bp = require('binary-parser');          // Binary parser module
 var Parser = bp.Parser;
-var toggle = require('endian-toggle');      
+var toggle = require('endian-toggle');
+var tcpip = require('./tcp_ip');      
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -479,3 +480,4 @@ exports.parse_udp = parse_udp;
 exports.make_tftp = make_tftp;
 exports.make_tftp_error = make_tftp_error;
 exports.parse_bootp = parse_bootp;
+exports.parse_dns = tcpip.decodeDNS;

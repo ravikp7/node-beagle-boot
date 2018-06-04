@@ -7,6 +7,8 @@ const TFTP_PORT = 69;
 const NETCONSOLE_UDP_PORT = 6666;
 const SPLVID = 0x0451;
 const SPLPID = 0xd022;
+const DEVVID = 0x1d6b;
+const DEVPID = 0x0104;
 const ETHIPP = 0x0800;
 const ETHARPP = 0x0806;
 const MAXBUF = 450;
@@ -55,6 +57,9 @@ exports.usbMassStorage = () => {
     vid: SPLVID,
     pid: SPLPID,
     bootpFile: 'u-boot.img'
+  }, {
+    vid: DEVVID,
+    pid: DEVPID
   }]);
 };
 
@@ -71,6 +76,9 @@ exports.tftpServer = (serverConfigs) => {
       case usb.findByIds(SPLVID, SPLPID):
         foundDevice = (device.deviceDescriptor.bNumConfigurations == 2) ? 'SPL' : 'UMS';
         break;
+      case usb.findByIds(DEVVID, DEVPID):
+        foundDevice = 'DEV';
+        break;
       default:
         foundDevice = `Device ${device.deviceDescriptor}`;
     }
@@ -81,11 +89,7 @@ exports.tftpServer = (serverConfigs) => {
       if (device === usb.findByIds(server.vid, server.pid) && foundDevice != 'UMS') {
         server.device = device;
         server.foundDevice = foundDevice;
-        //emitterMod.emit('ncStarted', server);
-        if (server.foundDevice === 'SPL') {
-          server.isNcActive = false;
-        }
-        const timeout = (foundDevice == 'ROM') ? 0 : 500;
+        const timeout = (foundDevice == 'SPL') ? 500 : 0;
         setTimeout(() => {
           transfer(server);
         }, timeout);
@@ -132,6 +136,15 @@ const onOpen = (server) => {
       }
     }
     deviceInterface.claim();
+
+    // Claim CDC interface to disable networking by Host for Device running Debian
+    if (server.foundDevice === 'DEV') {
+      const devInt = server.device.interface(3);
+      if (devInt && devInt.isKernelDriverActive()) {
+        devInt.detachKernelDriver();
+      }
+      devInt.claim();
+    }
 
     // Set endpoints for usb transfer
     server.inEndpoint = deviceInterface.endpoint(deviceInterface.endpoints[0].address);
@@ -232,6 +245,9 @@ emitter.on('inTransfer', (server) => {
       case 'NC':
         emitter.emit('nc', server, data);
         break;
+      case 'mDNS':
+        parseDNS(server, data);
+        break;
     }
   });
   server.inEndpoint.on('error', (error) => {
@@ -273,9 +289,11 @@ const identifyRequest = (buff) => {
         if (opcode == 4) return 'TFTP_Data'; // Opcode = 4 for Acknowledgement (ACK)
       }
       if (dPort == NETCONSOLE_UDP_PORT) return 'NC';
+      if (dPort == 5353 && sPort == 5353) return 'mDNS';
       emitterMod.emit('error', `Unidentified UDP packet type: sPort=${sPort} dPort=${dPort}`);
     }
   }
+  if (buff[RNDIS_SIZE + 12] == 0x86 && buff[RNDIS_SIZE + 13] == 0xDD) console.log('ipv6');
   return 'notIdentified';
 };
 
@@ -404,4 +422,14 @@ const extractName = (data) => {
     nameCount++;
   }
   return name;
+};
+
+// Function to process mDNS
+const parseDNS = (server, data) => {
+  const buf = Buffer.alloc(MAXBUF - RNDIS_SIZE - ETHER_SIZE - IP_SIZE - UDP_SIZE);
+  data.copy(buf, 0, RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE, MAXBUF);
+  protocols.parse_dns(buf).Questions.forEach((question) => {
+    console.log(question.qName);
+    console.log(question.qTypeClass);
+  });
 };
