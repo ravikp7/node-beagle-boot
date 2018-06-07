@@ -426,10 +426,19 @@ const extractName = (data) => {
 
 // Function to process mDNS
 const parseDNS = (server, data) => {
-  const buf = Buffer.alloc(MAXBUF - RNDIS_SIZE - ETHER_SIZE - IP_SIZE - UDP_SIZE);
-  data.copy(buf, 0, RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE, MAXBUF);
-  protocols.parse_dns(buf).Questions.forEach((question) => {
-    console.log(question.qName);
-    console.log(question.qTypeClass);
+  const buf = data.slice(RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE);
+  const parsedDns = protocols.parse_dns(buf);
+  console.log(parsedDns.Header);
+  parsedDns.Questions.forEach((question) => {
+    console.log(question.name);
+    console.log(question.otherFields);
+  });
+  parsedDns.NameServers.forEach((question) => {
+    console.log(question.name);
+    console.log(question.otherFields);
+  });
+  parsedDns.AnswerRecords.forEach((question) => {
+    console.log(question.name);
+    console.log(question.otherFields);
   });
 };
