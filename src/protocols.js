@@ -1,8 +1,9 @@
 var sp = require('schemapack');             // Serialization module
-var bp = require('binary-parser');          // Binary parser module
+var bp = require('binary-parser-encoder');          // Binary parser module
 var Parser = bp.Parser;
 var toggle = require('endian-toggle');
-var mDns = require('./dns');      
+var mDns = require('./dns');
+var ip = require('./ip');
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -162,7 +163,7 @@ var ethhdr = new Parser()
         type: 'uint8',
         length: 6
   })
-  .int16be('h_proto'); 
+  .uint16be('h_proto'); 
 
 // ARP header
 var arphdr = new Parser()
@@ -481,3 +482,5 @@ exports.make_tftp = make_tftp;
 exports.make_tftp_error = make_tftp_error;
 exports.parse_bootp = parse_bootp;
 exports.parse_dns = mDns.decodeDNS;
+exports.parseIpv6 = ip.parseIpv6;
+exports.parseIpv4 = ip.parseIpv4;

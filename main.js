@@ -5,12 +5,15 @@ const BOOTPC = 68;
 const IPUDP = 17;
 const TFTP_PORT = 69;
 const NETCONSOLE_UDP_PORT = 6666;
+const MDNS_UDP_PORT = 5353;
 const SPLVID = 0x0451;
 const SPLPID = 0xd022;
 const DEVVID = 0x1d6b;
 const DEVPID = 0x0104;
 const ETHIPP = 0x0800;
-const ETHARPP = 0x0806;
+const ETH_TYPE_ARP = 0x0806;
+const ETH_TYPE_IPV4 = 0x0800;
+const ETH_TYPE_IPV6 = 0x86DD;
 const MAXBUF = 450;
 const SERVER_IP = [0xc0, 0xa8, 0x01, 0x09]; // 192.168.1.9
 const BB_IP = [0xc0, 0xa8, 0x01, 0x03]; // 192.168.1.3
@@ -20,7 +23,8 @@ const SERVER_NAME = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84]; // ASCII ['B','E',
 const RNDIS_SIZE = 44;
 const ETHER_SIZE = 14;
 const ARP_SIZE = 28;
-const IP_SIZE = 20;
+const IPV4_SIZE = 20;
+const IPV6_SIZE = 40;
 const UDP_SIZE = 8;
 const BOOTP_SIZE = 300;
 const TFTP_SIZE = 4;
@@ -248,6 +252,8 @@ emitter.on('inTransfer', (server) => {
       case 'mDNS':
         parseDNS(server, data);
         break;
+      default:
+        console.log(request);
     }
   });
   server.inEndpoint.on('error', (error) => {
@@ -257,7 +263,7 @@ emitter.on('inTransfer', (server) => {
 
 
 // Event for outEnd Transfer
-emitter.on('outTransfer', (server, data, request) => {
+emitter.on('outTransfer', (server, data, request) => {  
   server.outEndpoint.transfer(data, (error) => {
     if (!error) {
       if (request == 'BOOTP') updateProgress(`${request} reply done`);
@@ -268,33 +274,35 @@ emitter.on('outTransfer', (server, data, request) => {
 
 // Function to identify request packet
 const identifyRequest = (buff) => {
-
-  // Checking Ether Type
-  if (buff[RNDIS_SIZE + 12] == 0x08 && buff[RNDIS_SIZE + 13] == 0x06) return 'ARP'; // 0x0806 for ARP
-  if (buff[RNDIS_SIZE + 12] == 0x08 && buff[RNDIS_SIZE + 13] == 0x00) // 0x0800 for IPv4
-  {
-    // Checking IPv4 protocol for UDP
-    if (buff[RNDIS_SIZE + ETHER_SIZE + 9] == IPUDP) { // 0x11 for UDP in IPv4
-
-      // UDP, So now checking for BOOTP or TFTP ports
-      const udpOffset = RNDIS_SIZE + ETHER_SIZE + IP_SIZE;
-      const sPort = buff[udpOffset] * 0x100 + buff[udpOffset + 1];
-      const dPort = buff[udpOffset + 2] * 0x100 + buff[udpOffset + 3];
+  const ether = protocols.decode_ether(buff.slice(RNDIS_SIZE));
+  if (ether.h_proto === ETH_TYPE_ARP) return 'ARP';
+  if (ether.h_proto === ETH_TYPE_IPV4) {
+    const ipv4 = protocols.parseIpv4(buff.slice(RNDIS_SIZE + ETHER_SIZE));
+    if (ipv4.Protocol === 2) return 'IGMP';
+    if (ipv4.Protocol === IPUDP) {
+      const udp = protocols.parse_udp(buff.slice(RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE));
+      const sPort = udp.udpSrc;
+      const dPort = udp.udpDest;
       if (sPort == BOOTPC && dPort == BOOTPS) return 'BOOTP'; // Port 68: BOOTP Client, Port 67: BOOTP Server
       if (dPort == TFTP_PORT) {
-
-        // Handling TFTP requests
-        const opcode = buff[RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE + 1];
+        const opcode = buff[RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + UDP_SIZE + 1];
         if (opcode == 1) return 'TFTP'; // Opcode = 1 for Read Request (RRQ)
         if (opcode == 4) return 'TFTP_Data'; // Opcode = 4 for Acknowledgement (ACK)
       }
       if (dPort == NETCONSOLE_UDP_PORT) return 'NC';
-      if (dPort == 5353 && sPort == 5353) return 'mDNS';
+      if (dPort == MDNS_UDP_PORT && sPort == MDNS_UDP_PORT) return 'mDNS';
       emitterMod.emit('error', `Unidentified UDP packet type: sPort=${sPort} dPort=${dPort}`);
     }
   }
-  if (buff[RNDIS_SIZE + 12] == 0x86 && buff[RNDIS_SIZE + 13] == 0xDD) console.log('ipv6');
-  return 'notIdentified';
+  if (ether.h_proto === ETH_TYPE_IPV6) {
+    const ipv6 = protocols.parseIpv6(buff.slice(RNDIS_SIZE + ETHER_SIZE));
+    if (ipv6.NextHeader === 1) return 'ICMP';
+    if (ipv6.NextHeader === IPUDP) {
+      const udp = protocols.parse_udp(buff.slice(RNDIS_SIZE + ETHER_SIZE + IPV6_SIZE));
+      if (udp.udpSrc == MDNS_UDP_PORT && udp.udpDest == MDNS_UDP_PORT) return 'mDNS';
+    }
+  }
+  return 'unidentified';
 };
 
 // Function to process BOOTP request
@@ -302,15 +310,15 @@ const processBOOTP = (server, data) => {
   const ether_buf = Buffer.alloc(MAXBUF - RNDIS_SIZE);
   const udp_buf = Buffer.alloc(UDP_SIZE);
   const bootp_buf = Buffer.alloc(BOOTP_SIZE);
-  data.copy(udp_buf, 0, RNDIS_SIZE + ETHER_SIZE + IP_SIZE, MAXBUF);
-  data.copy(bootp_buf, 0, RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE, MAXBUF);
+  data.copy(udp_buf, 0, RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE, MAXBUF);
+  data.copy(bootp_buf, 0, RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + UDP_SIZE, MAXBUF);
   data.copy(ether_buf, 0, RNDIS_SIZE, MAXBUF);
   server.ether = protocols.decode_ether(ether_buf); // Gets decoded ether packet data
   const udpUboot = protocols.parse_udp(udp_buf); // parsed udp header
   const bootp = protocols.parse_bootp(bootp_buf); // parsed bootp header
   const rndis = protocols.make_rndis(FULL_SIZE - RNDIS_SIZE);
   const eth2 = protocols.make_ether2(server.ether.h_source, server.ether.h_dest, ETHIPP);
-  const ip = protocols.make_ipv4(SERVER_IP, BB_IP, IPUDP, 0, IP_SIZE + UDP_SIZE + BOOTP_SIZE, 0);
+  const ip = protocols.make_ipv4(SERVER_IP, BB_IP, IPUDP, 0, IPV4_SIZE + UDP_SIZE + BOOTP_SIZE, 0);
   const udp = protocols.make_udp(BOOTP_SIZE, udpUboot.udpDest, udpUboot.udpSrc);
   const bootreply = protocols.make_bootp(SERVER_NAME, server.bootpFile, bootp.xid, server.ether.h_source, BB_IP, SERVER_IP);
   return Buffer.concat([rndis, eth2, ip, udp, bootreply], FULL_SIZE);
@@ -330,7 +338,7 @@ const processARP = (server, data) => {
 // Event to process TFTP request
 emitter.on('processTFTP', (server, data) => {
   const udpTFTP_buf = Buffer.alloc(UDP_SIZE);
-  data.copy(udpTFTP_buf, 0, RNDIS_SIZE + ETHER_SIZE + IP_SIZE, RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE);
+  data.copy(udpTFTP_buf, 0, RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE, RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + UDP_SIZE);
   server.tftp = {}; // Object containing TFTP parameters
   server.tftp.i = 1; // Keeps count of File Blocks transferred
   server.tftp.receivedUdp = protocols.parse_udp(udpTFTP_buf); // Received UDP packet for SPL tftp
@@ -354,7 +362,7 @@ emitter.on('processTFTP', (server, data) => {
 // Event for netconsole in
 emitter.on('nc', (server, data) => {
   const nc_buf = Buffer.alloc(MAXBUF);
-  data.copy(nc_buf, 0, RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE, MAXBUF);
+  data.copy(nc_buf, 0, RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + UDP_SIZE, MAXBUF);
   process.stdout.write(nc_buf.toString());
   if (!server.isNcActive) {
     server.isNcActive = true;
@@ -368,9 +376,9 @@ emitterMod.on('ncin', (server, command) => {
   const blockSize = data.length;
   const ncStdinData = Buffer.alloc(blockSize);
   data.copy(ncStdinData, 0, 0, blockSize);
-  const rndis = protocols.make_rndis(ETHER_SIZE + IP_SIZE + UDP_SIZE + blockSize);
+  const rndis = protocols.make_rndis(ETHER_SIZE + IPV4_SIZE + UDP_SIZE + blockSize);
   const eth2 = protocols.make_ether2(server.ether.h_source, server.ether.h_dest, ETHIPP);
-  const ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, IP_SIZE + UDP_SIZE + blockSize, 0);
+  const ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, IPV4_SIZE + UDP_SIZE + blockSize, 0);
   const udp = protocols.make_udp(blockSize, NETCONSOLE_UDP_PORT, NETCONSOLE_UDP_PORT);
   const packet = Buffer.concat([rndis, eth2, ip, udp, data]);
   emitter.emit('outTransfer', server, packet, 'NC');
@@ -383,22 +391,22 @@ const processTFTP_Data = (server) => {
   const blockData = Buffer.alloc(blockSize);
   server.tftp.fileData.copy(blockData, 0, server.tftp.start, server.tftp.start + blockSize); // Copying data to block
   server.tftp.start += blockSize; // Keep counts of bytes transferred upto
-  const rndis = protocols.make_rndis(ETHER_SIZE + IP_SIZE + UDP_SIZE + TFTP_SIZE + blockSize);
-  const ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, IP_SIZE + UDP_SIZE + TFTP_SIZE + blockSize, 0);
+  const rndis = protocols.make_rndis(ETHER_SIZE + IPV4_SIZE + UDP_SIZE + TFTP_SIZE + blockSize);
+  const ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, IPV4_SIZE + UDP_SIZE + TFTP_SIZE + blockSize, 0);
   const udp = protocols.make_udp(TFTP_SIZE + blockSize, server.tftp.receivedUdp.udpDest, server.tftp.receivedUdp.udpSrc);
   const tftp = protocols.make_tftp(3, server.tftp.i);
   server.tftp.i++;
-  return Buffer.concat([rndis, server.tftp.eth2, ip, udp, tftp, blockData], RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE + TFTP_SIZE + blockSize);
+  return Buffer.concat([rndis, server.tftp.eth2, ip, udp, tftp, blockData], RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + UDP_SIZE + TFTP_SIZE + blockSize);
 };
 
 // Function to handle TFTP error
 const processTFTP_Error = (server) => {
   const error_msg = 'File not found';
-  const rndis = protocols.make_rndis(ETHER_SIZE + IP_SIZE + UDP_SIZE + TFTP_SIZE + error_msg.length + 1);
-  const ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, IP_SIZE + UDP_SIZE + TFTP_SIZE + error_msg.length + 1, 0);
+  const rndis = protocols.make_rndis(ETHER_SIZE + IPV4_SIZE + UDP_SIZE + TFTP_SIZE + error_msg.length + 1);
+  const ip = protocols.make_ipv4(server.receivedARP.ip_dest, server.receivedARP.ip_source, IPUDP, 0, IPV4_SIZE + UDP_SIZE + TFTP_SIZE + error_msg.length + 1, 0);
   const udp = protocols.make_udp(TFTP_SIZE + error_msg.length + 1, server.tftp.receivedUdp.udpDest, server.tftp.receivedUdp.udpSrc);
   const tftp = protocols.make_tftp(5, 1, error_msg);
-  return Buffer.concat([rndis, server.tftp.eth2, ip, udp, tftp], RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE + TFTP_SIZE + error_msg.length + 1);
+  return Buffer.concat([rndis, server.tftp.eth2, ip, udp, tftp], RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + UDP_SIZE + TFTP_SIZE + error_msg.length + 1);
 };
 
 // Function for progress update
@@ -414,7 +422,7 @@ const updateProgress = (description) => {
 
 // Function to extract FileName from TFTP packet
 const extractName = (data) => {
-  const fv = RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE + 2;
+  const fv = RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + UDP_SIZE + 2;
   let nameCount = 0;
   let name = '';
   while (data[fv + nameCount] != 0) {
@@ -426,7 +434,7 @@ const extractName = (data) => {
 
 // Function to process mDNS
 const parseDNS = (server, data) => {
-  const buf = data.slice(RNDIS_SIZE + ETHER_SIZE + IP_SIZE + UDP_SIZE);
+  const buf = data.slice(RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + UDP_SIZE);
   const parsedDns = protocols.parse_dns(buf);
   console.log(parsedDns.Header);
   parsedDns.Questions.forEach((question) => {
