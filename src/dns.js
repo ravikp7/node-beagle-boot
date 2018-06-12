@@ -1,4 +1,4 @@
-const bp = require('binary-parser'); // Binary parser module
+const bp = require('binary-parser-encoder'); // Binary parser module
 const Parser = bp.Parser;
 
 // Resource Record Type
@@ -45,13 +45,16 @@ const dnsName = new Parser()
 
 // Parser for mDNS question Type and Class Fields
 const mdnsQuesTypeClass = new Parser()
-  .uint16be('QType') // Question Type
-  .uint16be('QClass'); // Question Class
+  .endianess('big')
+  .uint16('QType') // Question Type
+  .bit1('UnicastResponse')
+  .bit15('QClass'); // Question Class
 
 // mDNS RR Type Parsers
 const parseAddress = new Parser()
   .endianess('big')
-  .uint16('Class') // RR Class
+  .bit1('CacheFlush')
+  .bit15('Class') // RR Class
   .uint32('TTL') // Time to Live
   .uint16('RDLength') // Resource Data Length
   .array('Address', { // 32 bit IP address
@@ -60,12 +63,14 @@ const parseAddress = new Parser()
   });
 const parsePointer = new Parser()
   .endianess('big')
-  .uint16('Class') // RR Class
+  .bit1('CacheFlush')
+  .bit15('Class') // RR Class
   .uint32('TTL') // Time to Live
   .uint16('RDLength'); // Resource Data Length
 const parseText = new Parser()
   .endianess('big')
-  .uint16('Class') // RR Class
+  .bit1('CacheFlush')
+  .bit15('Class') // RR Class
   .uint32('TTL') // Time to Live
   .uint16('RDLength') // Resource Data Length
   .uint8('TxtLength') // Text Data Length
@@ -75,7 +80,8 @@ const parseText = new Parser()
   });
 const parseService = new Parser()
   .endianess('big')
-  .uint16('Class') // RR Class
+  .bit1('CacheFlush')
+  .bit15('Class') // RR Class
   .uint32('TTL') // Time to Live
   .uint16('RDLength') // Resource Data Length
   .uint16('Priority') // Priority of Target Host, Lower = more preferred
