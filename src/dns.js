@@ -12,6 +12,7 @@ const RR_ADDRESS_SIZE = 14; // Size of Address RR section excluding Domain Name
 const RR_TXT_DATA_SIZE = 11; // Size of Text Data RR section excluding Domain Name
 const RR_POINTER_SIZE = 10; // Size of Pointer RR section excluding Domain Name
 const RR_SERVICE_SIZE = 16; // Size of  Service RR section excluding Domain Name
+const NAME_POINTER_IDENTIFIER = 192; // Identifies a Name Pointer
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////// Headers for parsing (Binary-Parser) /////////////////////////////////////////
@@ -51,7 +52,7 @@ const mdnsQuesTypeClass = new Parser()
   .bit15('QClass'); // Question Class
 
 // mDNS RR Type Parsers
-const parseAddress = new Parser()
+const parseIpv4Address = new Parser()
   .endianess('big')
   .bit1('CacheFlush')
   .bit15('Class') // RR Class
@@ -78,6 +79,16 @@ const parseText = new Parser()
     encoding: 'ascii',
     length: 'TxtLength'
   });
+const parseIpv6Address = new Parser()
+  .endianess('big')
+  .bit1('CacheFlush')
+  .bit15('Class') // RR Class
+  .uint32('TTL') // Time to Live
+  .uint16('RDLength') // Resource Data Length
+  .array('Address', { // 16 byte IP address
+    type: 'uint8',
+    length: 16
+  });
 const parseService = new Parser()
   .endianess('big')
   .bit1('CacheFlush')
@@ -90,12 +101,13 @@ const parseService = new Parser()
 
 
 // mDNS Resource Record Parsing
-const dnsResourceRecordParser = new Parser().uint16be('RRType').choice('Fields', {
+const dnsResourceRecordParser = new Parser().uint16be('RRType').choice({
   tag: 'RRType',
   choices: {
-    1: parseAddress, // Parses when RR Type = Address
+    1: parseIpv4Address, // Parses when RR Type = IPv4 Address
     12: parsePointer, // Parses when RR Type = Pointer
     16: parseText, // Parses when RR Type = Text String
+    28: parseIpv6Address, // Parses when RR Type = IPv6 Address
     33: parseService // Parses when RR Type = Service Record
   }
 });
@@ -113,18 +125,13 @@ const dnsResourceRecordParser = new Parser().uint16be('RRType').choice('Fields',
  * @param {Number} buffCount - Keeps Buffer bytes count
  * @returns {Object} result - Containing Name and new buffCount
  * 
- * @example
- *{ name:
- *   [ { len: 25, Name: 'Cloud9 IDE for beaglebone' },
- *     { len: 5, Name: '_http' },
- *     { len: 4, Name: '_tcp' },
- *     { len: 5, Name: 'local' } ],
+ * @example (return)
+ *{ name: ['Cloud9 IDE for beaglebone', '_http', '_tcp', 'local'],
  *  newBuffCount: 56 }
  */
 const getDnsName = (data, buffCount) => {
   const ONE_BYTE_OFFSET = 1; // Used to move pointer to next byte to be processed
   const MAX_LABEL_SIZE = 63; // Max Label Size for Domain Name
-  const NAME_POINTER_IDENTIFIER = 192; // Identifies a Name Pointer
   const name = []; // Stores the Name
   const result = {}; // Stores the Name and Next Byte Location
   let newBuffCount = buffCount; // Keeps Count of Next Byte in Buffer
@@ -133,8 +140,8 @@ const getDnsName = (data, buffCount) => {
   let pointerFound = false; // Keeps track if pointer is found
   while (data[buffPointer] !== 0) { // Keep Looping Until finds a Zero which marks end of Domain Name
     if (data[buffPointer] <= MAX_LABEL_SIZE) { // Real Name Found (not Pointer)
-      name.push(dnsName.parse(data.slice(buffPointer))); // Parse it and push this Name part
-      buffPointer += (name[namePartCount].Name.length + ONE_BYTE_OFFSET); // Move Pointer beside previous Name part
+      name.push(dnsName.parse(data.slice(buffPointer)).Name); // Parse it and push this Name part
+      buffPointer += (name[namePartCount].length + ONE_BYTE_OFFSET); // Move Pointer beside previous Name part
       namePartCount++;
       if (!pointerFound) newBuffCount = buffPointer; // Keep Buffer Count Pointer moving until a pointer is found
     } else if (data[buffPointer] >= NAME_POINTER_IDENTIFIER) { // Pointer to Name is found     
@@ -194,16 +201,16 @@ const parseDnsPayload = (data, totalNum, offset, parser) => {
       if (RRType === RR_TYPE_POINTER) {
         buffCount += RR_POINTER_SIZE;
         let result = getDnsName(data, buffCount); // Domain Name is present at end in RR TYPE POINTER
-        otherFields.DomainName = result.name;
+        sectionEntry.DomainName = result.name;
         buffCount = result.newBuffCount;
       }
       if (RRType === RR_TYPE_TEXT) {
-        buffCount += RR_TXT_DATA_SIZE + otherFields.Fields.TxtLength;
+        buffCount += RR_TXT_DATA_SIZE + otherFields.TxtLength;
       }
       if (RRType === RR_TYPE_SERVICE) {
         buffCount += RR_SERVICE_SIZE;
         let result = getDnsName(data, buffCount, offset); // Target is present at end in RR TYPE SERVICE
-        otherFields.Target = result.name;
+        sectionEntry.Target = result.name;
         buffCount = result.newBuffCount;
       }
     }
@@ -282,5 +289,157 @@ const dnsParse = (data) => {
   return mDnsPacket;
 };
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////// Packet encode functions ///////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * @summary Encode DNS name
+ * @param {Array} name - Contains Name parts as string
+ * @param {Object} namePointers - Contains pointer to a Name part
+ * @param {Number} buffCount - Keeps count of data buffer bytes
+ * @return {Object} result
+ * @example (return)
+ * { nameBuff: <Buffer c0 0c>,
+ * newNamePointers:
+ *  { '2': 77,
+ *    '7': 79,
+ *    '168': 81,
+ *    '192': 85,
+ *    'Cloud9 IDE for beaglebone': 12,
+ *    _http: 38,
+ *    _tcp: 44,
+ *    local: 49,
+ *    beaglebone: 60,
+ *    'in-addr': 89,
+ *    arpa: 97,
+ *   'Node-RED for beaglebone': 107 },
+ * newbuffCount: 202 }
+ */
+const getNameBuff = (name, namePointers, buffCount) => {
+  const NAME_POINTER_BUFFER_SIZE = 2; // Name pointer buffer size (Two value- Identifier and Pointer)let 
+  let storePointer = true;
+  const result = {}; // Object to be returned
+  let nameBuff = Buffer.alloc(0); // Stores name
+  let i;
+  for (i = 0; i < name.length; i++) {
+    if (!namePointers[name[i]]) { // When the name part has a pointer
+      if (storePointer) namePointers[name[i]] = buffCount; // Save name part pointer
+      else if (name[i].length > 1) namePointers[name[i]] = buffCount;
+      if (name[i].length < 2 && storePointer) storePointer = false; // Store Pointer only once for single character name part
+      const namePart = { // name part for encoding
+        len: name[i].length,
+        Name: name[i]
+      };
+      const namePartBuff = dnsName.encode(namePart); // Encode name part
+      nameBuff = Buffer.concat([nameBuff, namePartBuff]); // Concat name parts buffers
+      buffCount += namePartBuff.length; // Increse buffer counter
+    } else { // When the name part doesn't have a pointer
+      const pointerBuffer = Buffer.alloc(2); // Buffer to store pointer
+      pointerBuffer.writeUInt8(NAME_POINTER_IDENTIFIER, 0); // Write pointer identifier
+      pointerBuffer.writeUInt8(namePointers[name[i]], 1); // Write pointer value
+      nameBuff = Buffer.concat([nameBuff, pointerBuffer]); // Concat all name parts
+      buffCount += NAME_POINTER_BUFFER_SIZE; // Increment Buffer counter
+      break; // Break loop when pointer is found
+    }
+  }
+  if (i === name.length) { // Push a zero when pointer isn't foundto mark name end
+    nameBuff = Buffer.concat([nameBuff, Buffer.alloc(1)]);
+    buffCount += 1;
+  }
+  result.nameBuff = nameBuff; // Store Name Buffer
+  result.newNamePointers = namePointers; // Store new name pointers
+  result.newbuffCount = buffCount; // Store new Buffer count
+  return result;
+};
+
+/**
+ * @summary Encode DNS Payload
+ * @param {Array} section - Contains objects of section entry
+ * @param {Object} namePointers - Contains Pointer to Name part
+ * @param {Number} buffCount - Keeps count of data buffer bytes 
+ * @param {Parser/Encoder} fieldEncoder - Encodes Other Fields
+ * @return {Object} result
+ * @example (return)
+ * { sectionBuff: <Buffer >,
+ * newNamePointers:
+ *  { '2': 77,
+ *    '7': 79,
+ *    '168': 81,
+ *    '192': 85,
+ *    'Cloud9 IDE for beaglebone': 12,
+ *    _http: 38,
+ *    _tcp: 44,
+ *    local: 49,
+ *    beaglebone: 60,
+ *    'in-addr': 89,
+ *    arpa: 97,
+ *    'Node-RED for beaglebone': 107 },
+ * newbuffCount: 137 }
+ */
+const encodeDnsPayload = (section, namePointers, buffCount, fieldEncoder) => {
+  const result = {}; // Object to be returned
+  let sectionBuff = Buffer.alloc(0); // Buffer for Record section
+  section.forEach((entry) => { // Loop through all section entries
+    const nameBuffResult = getNameBuff(entry.name, namePointers, buffCount); // Encode name
+    const nameBuff = nameBuffResult.nameBuff; // Buffer for encoded name
+    namePointers = nameBuffResult.newNamePointers; // new name pointer
+    buffCount = nameBuffResult.newbuffCount; // new buffer count
+    let otherFieldsBuff = fieldEncoder.encode(entry.otherFields); // encode other fields of entry
+    buffCount += otherFieldsBuff.length; // increment buffer count
+    if (entry.DomainName || entry.Target) { // If Domain name or Target is present
+      const nameResult = getNameBuff(entry.DomainName || entry.Target, namePointers, buffCount); // Encode name
+      const nameBuff = nameResult.nameBuff;
+      namePointers = nameResult.newNamePointers;
+      buffCount = nameResult.newbuffCount;
+      otherFieldsBuff = Buffer.concat([otherFieldsBuff, nameBuff]); // Concat other fields with the name at end
+    }
+    const entryBuff = Buffer.concat([nameBuff, otherFieldsBuff]); // Concat name with other fields
+    sectionBuff = Buffer.concat([sectionBuff, entryBuff]); // Concat sections
+  });
+  result.sectionBuff = sectionBuff; // Section buffer
+  result.newNamePointers = namePointers; // new name pointers
+  result.newbuffCount = buffCount; // new buffer count
+  return result;
+};
+
+/**
+ * @summary Encode mDNS packet
+ * @param {Object} mdnsPacket - mDNS packet of format as retured by dnsParse function
+ * @return {Buffer}
+ */
+const encodeMdns = (mdnsPacket) => {
+  const headerBuff = dnsHdr.encode(mdnsPacket.Header); // Buffer for mDNS hedaer
+  let namePointers = {}; // Stores pointers to Name parts
+  let buffCount = headerBuff.length; // Keeps buffer count
+
+  // Encode Question section
+  const quesResult = encodeDnsPayload(mdnsPacket.Questions, namePointers, buffCount, mdnsQuesTypeClass);
+  const quesBuffer = quesResult.sectionBuff;
+  namePointers = quesResult.newNamePointers;
+  buffCount = quesResult.newbuffCount;
+
+  // Encode Answers section
+  const anResult = encodeDnsPayload(mdnsPacket.AnswerRecords, namePointers, buffCount, dnsResourceRecordParser);
+  const anBuffer = anResult.sectionBuff;
+  namePointers = anResult.newNamePointers;
+  buffCount = anResult.newbuffCount;
+
+  // Encode Name Servers section
+  const nsResult = encodeDnsPayload(mdnsPacket.NameServers, namePointers, buffCount, dnsResourceRecordParser);
+  const nsBuffer = nsResult.sectionBuff;
+  namePointers = nsResult.newNamePointers;
+  buffCount = nsResult.newbuffCount;
+
+  // Encode Additional Records section
+  const arResult = encodeDnsPayload(mdnsPacket.AdditionalRecords, namePointers, buffCount, dnsResourceRecordParser);
+  const arBuffer = arResult.sectionBuff;
+  namePointers = arResult.newNamePointers;
+  buffCount = arResult.newbuffCount;
+
+  return Buffer.concat([headerBuff, quesBuffer, anBuffer, nsBuffer, arBuffer]);
+};
+
 // exports
 exports.decodeDNS = dnsParse;
+exports.encodeMdns = encodeMdns;
