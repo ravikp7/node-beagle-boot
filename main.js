@@ -3,6 +3,10 @@ const ROMPID = 0x6141;
 const BOOTPS = 67;
 const BOOTPC = 68;
 const IPUDP = 17;
+const IP_IGMP = 2;
+const IPV6_HOP_BY_HOP_OPTION = 0;
+const IPV6_ICMP = 0x3A;
+const ICMPV6_LENGTH = 28;
 const TFTP_PORT = 69;
 const NETCONSOLE_UDP_PORT = 6666;
 const MDNS_UDP_PORT = 5353;
@@ -223,6 +227,7 @@ const onOpen = (server) => {
 emitter.on('inTransfer', (server) => {
   server.inEndpoint.on('data', (data) => {
     const request = identifyRequest(data);
+    console.log(request);
     switch (request) {
       case 'notIdentified':
         emitterMod.emit('error', `${request} packet type`);
@@ -252,6 +257,12 @@ emitter.on('inTransfer', (server) => {
       case 'mDNS':
         parseDNS(server, data);
         break;
+      case 'ICMPv6':
+        processIcmpv6(server, data);
+        break;
+      case 'IGMP':
+        processIgmp(server, data);
+        break;
       default:
         console.log(request);
     }
@@ -267,6 +278,9 @@ emitter.on('outTransfer', (server, data, request) => {
   server.outEndpoint.transfer(data, (error) => {
     if (!error) {
       if (request == 'BOOTP') updateProgress(`${request} reply done`);
+      if (request == 'DHCP') console.log('DHCP done');
+      if (request == 'ICMPv6') console.log('ICMPv6 done');
+      if (request == 'MDNS') console.log('MDNS done');
     }
   });
 });
@@ -278,6 +292,7 @@ const identifyRequest = (buff) => {
   if (ether.h_proto === ETH_TYPE_ARP) return 'ARP';
   if (ether.h_proto === ETH_TYPE_IPV4) {
     const ipv4 = protocols.parseIpv4(buff.slice(RNDIS_SIZE + ETHER_SIZE));
+    //console.log(ipv4);
     if (ipv4.Protocol === 2) return 'IGMP';
     if (ipv4.Protocol === IPUDP) {
       const udp = protocols.parse_udp(buff.slice(RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE));
@@ -296,7 +311,11 @@ const identifyRequest = (buff) => {
   }
   if (ether.h_proto === ETH_TYPE_IPV6) {
     const ipv6 = protocols.parseIpv6(buff.slice(RNDIS_SIZE + ETHER_SIZE));
-    if (ipv6.NextHeader === 1) return 'ICMP';
+    //console.log(ipv6);
+    if (ipv6.NextHeader === IPV6_HOP_BY_HOP_OPTION) {
+      const ipv6Option = protocols.parseIpv6Option(buff.slice(RNDIS_SIZE + ETHER_SIZE + IPV6_SIZE));
+      if (ipv6Option.NextHeader === IPV6_ICMP) return 'ICMPv6';
+    }
     if (ipv6.NextHeader === IPUDP) {
       const udp = protocols.parse_udp(buff.slice(RNDIS_SIZE + ETHER_SIZE + IPV6_SIZE));
       if (udp.udpSrc == MDNS_UDP_PORT && udp.udpDest == MDNS_UDP_PORT) return 'mDNS';
@@ -331,7 +350,7 @@ const processARP = (server, data) => {
   server.receivedARP = protocols.parse_arp(arp_buf); // Parsed received ARP request
   const arpResponse = protocols.make_arp(2, server.ether.h_dest, server.receivedARP.ip_dest, server.receivedARP.hw_source, server.receivedARP.ip_source);
   const rndis = protocols.make_rndis(ETHER_SIZE + ARP_SIZE);
-  const eth2 = protocols.make_ether2(server.ether.h_source, server.ether.h_dest, ETHARPP);
+  const eth2 = protocols.make_ether2(server.ether.h_source, server.ether.h_dest, ETH_TYPE_ARP);
   return Buffer.concat([rndis, eth2, arpResponse], RNDIS_SIZE + ETHER_SIZE + ARP_SIZE);
 };
 
@@ -436,7 +455,7 @@ const extractName = (data) => {
 const parseDNS = (server, data) => {
   const buf = data.slice(RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + UDP_SIZE);
   const parsedDns = protocols.parse_dns(buf);
-  console.log(parsedDns.Header);
+  console.log(parsedDns.Header);/*
   parsedDns.Questions.forEach((question) => {
     console.log(question.name);
     console.log(question.otherFields);
@@ -448,5 +467,254 @@ const parseDNS = (server, data) => {
   parsedDns.AnswerRecords.forEach((question) => {
     console.log(question.name);
     console.log(question.otherFields);
-  });
+  });*/
+  //console.log(protocols.parse_dns(protocols.encodeMdns(parsedDns)));
+
+  let mdnsPacket = {
+    Header: {
+      ID: 0,
+      QR: 0,
+      Opcode: 0,
+      AA: 0,
+      TC: 0,
+      RD: 0,
+      RA: 0,
+      Z: 0,
+      RCode: 0,
+      QCount: 2,
+      ANCount: 0,
+      NSCount: 2,
+      ARCount: 0
+    },
+    Questions: [
+      {
+        name: ['a', '6', '1', '0', 'd', '1', 'b', '1', '2', 'f', '7', 'f', 'e', '5', 'b', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '8', 'e', 'f', 'ip6', 'arpa'],
+        otherFields: {
+          QType: 255,
+          UnicastResponse: 0,
+          QClass: 1
+        }
+      },
+      {
+        name: ['BeagleBoot', 'local'],
+        otherFields: {
+          QType: 255,
+          UnicastResponse: 0,
+          QClass: 1
+        }
+      }
+    ],
+    AnswerRecords: [],
+    NameServers: [
+      {
+        name: ['BeagleBoot', 'local'],
+        otherFields: {
+          RRType: 28,
+          CacheFlush: 0,
+          Class: 1,
+          TTL: 120,
+          RDLength: 16,
+          Address: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0x0b, 0x5e, 0xf7, 0xf2, 0x1b, 0x1d, 0x01, 0x6a] 
+        }
+      },
+      {
+        name: ['a', '6', '1', '0', 'd', '1', 'b', '1', '2', 'f', '7', 'f', 'e', '5', 'b', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '8', 'e', 'f', 'ip6', 'arpa'],
+        otherFields: {
+          RRType: 12,
+          CacheFlush: 0,
+          Class: 1,
+          TTL: 120,
+          RDLength: 2
+        },
+        DomainName: ['BeagleBoot', 'local']
+      }
+    ],
+    AdditionalRecords: []
+  };
+  const mdnsBuff = protocols.encodeMdns(mdnsPacket);
+  const rndisBuff = protocols.make_rndis(FULL_SIZE - RNDIS_SIZE);
+  const etherSrc = [0x33, 0x33, 0, 0, 0, 0xfb];
+  const etherDst = [0x43, 0xa3, 0x16, 0xdf, 0x50, 0xc1];
+  const etherBuff = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_IPV6);
+  const sourceAdd = [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0x0b, 0x5e, 0xf7, 0xf2, 0x1b, 0x1d, 0x01, 0x6a];
+  const destAdd = [0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xfb];
+  const ipv6Header = {
+    //Version: 6,
+    //TrafficClass: 0,
+    //FlowLabel: 0xbecee,
+    VTF: [0x60, 0x0b, 0xec, 0xee],
+    PayloadLength: UDP_SIZE + mdnsBuff.length,
+    NextHeader: IPUDP,
+    HopLimit: 255,
+    SourceAddress: sourceAdd,
+    DestinationAddress: destAdd
+  };
+  const ipBuff = protocols.encodeIpv6(ipv6Header);
+  const udpBuff = protocols.make_udp(mdnsBuff.length, MDNS_UDP_PORT, MDNS_UDP_PORT);
+  const outputBuff = Buffer.concat([rndisBuff, etherBuff, ipBuff, udpBuff, mdnsBuff]);
+  emitter.emit('outTransfer', server, outputBuff, 'MDNS');
+
+  mdnsPacket.Questions = [];
+  mdnsPacket.NameServers = [];
+  mdnsPacket.AnswerRecords = [
+    {
+      name: ['a', '6', '1', '0', 'd', '1', 'b', '1', '2', 'f', '7', 'f', 'e', '5', 'b', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '8', 'e', 'f', 'ip6', 'arpa'],
+      otherFields: {
+        RRType: 12,
+        CacheFlush: 0,
+        Class: 1,
+        TTL: 120,
+        RDLength: 2
+      }
+    },
+    {
+      name: ['BeagleBoot', 'local'],
+      otherFields: {
+        RRType: 28,
+        CacheFlush: 0,
+        Class: 1,
+        TTL: 120,
+        RDLength: 16,
+        Address: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0x0b, 0x5e, 0xf7, 0xf2, 0x1b, 0x1d, 0x01, 0x6a] 
+      }
+    }
+  ];
+  processDhcp(server, data);
+};
+
+const processIcmpv6 = (server, data) => {
+  const ipv6Option = protocols.parseIpv6Option(data.slice(RNDIS_SIZE + ETHER_SIZE + IPV6_SIZE));
+  const optionLength = (ipv6Option.Length + 1) * 8; // https://www.ietf.org/rfc/rfc2460.txt#Section-4.3
+  const icmp = protocols.parseIcmp(data.slice(RNDIS_SIZE + ETHER_SIZE + IPV6_SIZE + optionLength));
+  console.log(icmp);
+
+  const rndisBuff = protocols.make_rndis(FULL_SIZE - RNDIS_SIZE);
+  const etherSrc = [0x04, 0xa3, 0x16, 0xdf, 0x50, 0xc1];
+  const etherDst = [0x33, 0x33, 0x00, 0x00, 0x00, 0x16];
+  const etherBuff = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_IPV4);
+  const sourceAdd = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const destAdd = [0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x16];
+  const ipv6Header = {
+    //Version: 6,
+    //TrafficClass: 0,
+    //FlowLabel: 0,
+    VTF: [0x60, 0x00, 0x00, 0x00],
+    PayloadLength: 36,
+    NextHeader: 58,
+    HopLimit: 1,
+    SourceAddress: sourceAdd,
+    DestinationAddress: destAdd
+  };
+  const ipBuff = protocols.encodeIpv6(ipv6Header);
+  const pseudoIpv6 = {
+    SourceAddress: sourceAdd,
+    DestinationAddress: destAdd,
+    Length: ICMPV6_LENGTH,
+    Zeros: [0,0,0],
+    NextHeader: IPV6_ICMP
+  };
+  const icmpHeader = {
+    Type: 143, // Multicast Listener
+    Code: 0,
+    Checksum: 0,
+    Reserved: 0,
+    MulticastRecords: 1
+  };
+  const multicastRecords = {
+    Type: 4,
+    AuxDataLen: 0,
+    NumberOfSources: 0,
+    MulticastAddress: [0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0xff, 0x1d, 0x01, 0x6a]
+  };
+  const icmpBuff = protocols.encodeIcmp(icmpHeader, pseudoIpv6, multicastRecords);
+  const icmpPacket = Buffer.concat([rndisBuff, etherBuff, ipBuff, icmpBuff]);
+  emitter.emit('outTransfer', server, icmpPacket, 'ICMPv6');
+};
+
+const processIgmp = (server, data) => {
+  const rndis = protocols.make_rndis(FULL_SIZE - RNDIS_SIZE);
+  const etherSrc = [0x04, 0xa3, 0x16, 0xdf, 0x50, 0xc1];
+  const etherDst = [0x01, 0x00, 0x5e, 0x00, 0x00, 0x16];
+  const etherBuff = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_IPV4);
+  const ipHeader = {
+    Version: 4,
+    IHL: 6,
+    TypeOfService: 0xc0,
+    TotalLength: 40,
+    Identification: 0,
+    Flags: 0x02,
+    FragmentOffset: 0,
+    TimeToLIve: 1,
+    Protocol: IP_IGMP,
+    HeaderChecksum: 0,
+    SourceAddress: [192, 168, 7, 1],
+    DestinationAddress: [224, 0, 0, 22]
+  };
+  const ipOptions = {
+    Type: 148,
+    Length: 4,
+    Data: 0
+  };
+  const ipBuff = protocols.encodeIpv4(ipHeader, ipOptions);
+  const igmp = data.slice(RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + 4);
+  const outputData = Buffer.concat([rndis, etherBuff, ipBuff, igmp], MAXBUF);
+  emitter.emit('outTransfer', server, outputData, 'IGMP');
+  processDhcp(server, data);
+};
+
+const processDhcp = (server, data) => {
+  const bootp = {
+    MessageType: 1,
+    HardwareType: 1,
+    HwAddressLength: 6,
+    HopCount: 0,
+    TransactionId: 0x9000d259,
+    SecondsElapsed: 3,
+    Flags: 0,
+    ClientIpAddress: [0, 0, 0, 0],
+    YourIpAddress: [0, 0, 0, 0],
+    NextServerIpAddress: [0, 0, 0, 0],
+    RelayAgentIpAddress: [0, 0, 0, 0],
+    ClientMacAddress: [0x04, 0xa3, 0x16, 0xdf, 0x50, 0xc1],
+    MacOffset: Array.apply(null, Array(10)).map(Number.prototype.valueOf,0),
+    ServerNameOffset: Array.apply(null, Array(64)).map(Number.prototype.valueOf,0),
+    BootFileName: Array.apply(null, Array(128)).map(Number.prototype.valueOf,0),
+    MagicCookie: 'DHCP',
+    Option1: 53,
+    Length1: 1,
+    DhcpRequest: 3,
+    Optionx: 50,
+    Lengthx: 4,
+    ReqIp: [192, 168, 7, 1],
+    Option2: 12,
+    Length2: 10,
+    HostName: 'BeagleBoot',
+    Option3: 55,
+    Length3: 16,
+    ParameterRequest: [1, 28, 2, 3, 15, 6, 119, 12, 44, 47, 26, 121, 42, 249, 33, 252],
+    Option4: 255
+  };
+  const bootpBuff = protocols.encodeBootp(bootp);
+  const rndis = protocols.make_rndis(FULL_SIZE - RNDIS_SIZE);
+  const etherSrc = [0x04, 0xa3, 0x16, 0xdf, 0x50, 0xc1];
+  const etherDst = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+  const etherBuff = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_IPV4);
+  const ipHeader = {
+    Version: 4,
+    IHL: 5,
+    TypeOfService: 0x10,
+    TotalLength: IPV4_SIZE + UDP_SIZE + BOOTP_SIZE,
+    Identification: 0,
+    Flags: 0x00,
+    FragmentOffset: 0,
+    TimeToLIve: 128,
+    Protocol: IPUDP,
+    HeaderChecksum: 0,
+    SourceAddress: [0, 0, 0, 0],
+    DestinationAddress: [255, 255, 255, 255]
+  };
+  const ipBuff = protocols.encodeIpv4(ipHeader, {});
+  const udpBuff = protocols.make_udp(BOOTP_SIZE, 68, 67);
+  const outputData = Buffer.concat([rndis, etherBuff, ipBuff, udpBuff, bootpBuff], FULL_SIZE);
+  emitter.emit('outTransfer', server, outputData, 'DHCP');
 };

@@ -4,6 +4,8 @@ var Parser = bp.Parser;
 var toggle = require('endian-toggle');
 var mDns = require('./dns');
 var ip = require('./ip');
+var icmp = require('./icmp');
+var bootP = require('./bootp');
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -333,7 +335,7 @@ function make_udp(udpData_len, srcPort, dstPort){
     { udpSrc: srcPort},         
     { udpDst: dstPort},         
     { udpLen: udpData_len+8},       
-    { chkSum: 0}                
+    { chkSum: 0x8b8c}                
   ];
   return fix_buff(udp_e.encode(udp));
 }
@@ -434,6 +436,9 @@ function make_tftp_error(opcode, err_code, desc){
   return fix_buff(tftp_error.encode(my_tftp_error));
 }
 
+function encodeEther(packet) {
+  return ethhdr.encode(packet);
+}
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -484,3 +489,12 @@ exports.parse_bootp = parse_bootp;
 exports.parse_dns = mDns.decodeDNS;
 exports.parseIpv6 = ip.parseIpv6;
 exports.parseIpv4 = ip.parseIpv4;
+exports.parseIcmp = icmp.parseIcmp;
+exports.encodeIpv4 = ip.encodeIpv4;
+exports.encodeEther = encodeEther;
+exports.encodeBootp = bootP.encodeBootp;
+exports.parseBootp = bootP.parseBootp;
+exports.encodeIpv6 = ip.encodeIpv6;
+exports.parseIpv6Option = ip.parseIpv6Option;
+exports.encodeIcmp = icmp.encodeIcmp;
+exports.encodeMdns = mDns.encodeMdns;
