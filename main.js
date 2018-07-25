@@ -523,6 +523,9 @@ emitter.on('inTransfer', (server) => {
               const changedPacket = Buffer.concat([etherHeader, arpHeader]);
               sendToNetwork(changedPacket);
             }
+            if (compareIp(receivedIP.DestinationAddress, proxyConfig.Host.SourceIp)) {
+              etherDst = proxyConfig.Host.SourceMac;
+            }
           }
         }
         else ipDst = receivedIP.DestinationAddress;
