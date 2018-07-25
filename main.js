@@ -474,7 +474,6 @@ emitter.on('inTransfer', (server) => {
           else gatewayMac.push(part);
         });
         proxyConfig.BB.GatewayMac = gatewayMac;
-        console.log(proxyConfig.BB);
       }
       const request = identifyRequest(data);
       if (request === 'ARP') {
