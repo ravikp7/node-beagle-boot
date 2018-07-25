@@ -86,9 +86,10 @@ const parseIpv6 = (data) => ipv6Hdr.parse(data);
 // Functions for encoding data
 const encodeIpv4 = (ipHeader, options) => {
   const ipHdrBuff = ipv4Hdr.encode(ipHeader);
-  const ipOptionsBuff = ipv4Option.encode(options);
+  let ipOptionsBuff = Buffer.alloc(0);
+  if (options) ipOptionsBuff = ipv4Option.encode(options);
   let ipBuff = Buffer.concat([ipHdrBuff, ipOptionsBuff]);
-
+  let ipHeaderWithChecksum;
   // Calculating Checksum and adding it in packet
   if (!ipHeader.HeaderChecksum) {
     const ip = new Parser() // Parsing packet data as array of 2 byte words
@@ -110,11 +111,10 @@ const encodeIpv4 = (ipHeader, options) => {
     }
     a = (~sum >>> 0).toString(16); // Invert bitwise and unsign the number
     sum = parseInt(a[4] + a[5] + a[6] + a[7], 16); // Taking 2 bytes out of the inverted bytes
-    const ipHeaderWithChecksum = Object.assign(ipHeader);
+    ipHeaderWithChecksum = Object.assign(ipHeader);
     ipHeaderWithChecksum.HeaderChecksum = sum;
-    ipBuff = encodeIpv4(ipHeaderWithChecksum, options);
   }
-  return ipBuff;
+  return ipv4Hdr.encode(ipHeaderWithChecksum);
 };
 
 const encodeIpv6 = (ipHeader) => ipv6Hdr.encode(ipHeader);
