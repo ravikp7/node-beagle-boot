@@ -3,28 +3,29 @@ const ROMPID = 0x6141;
 const BOOTPS = 67;
 const BOOTPC = 68;
 const IPUDP = 17;
-const IP_IGMP = 2;
 const IPV6_HOP_BY_HOP_OPTION = 0;
 const IPV6_ICMP = 0x3A;
-const ICMPV6_LENGTH = 28;
+const IP_TCP = 0x06;
 const TFTP_PORT = 69;
 const NETCONSOLE_UDP_PORT = 6666;
 const MDNS_UDP_PORT = 5353;
 const SPLVID = 0x0451;
 const SPLPID = 0xd022;
-const DEVVID = 0x1d6b;
-const DEVPID = 0x0104;
+const DEBIAN_VID = 0x1d6b;
+const DEBIAN_PID = 0x0104;
 const ETHIPP = 0x0800;
 const ETH_TYPE_ARP = 0x0806;
 const ETH_TYPE_IPV4 = 0x0800;
 const ETH_TYPE_IPV6 = 0x86DD;
-const MAXBUF = 450;
+const ARP_OPCODE_REQUEST = 1;
+const ARP_OPCODE_REPLY = 2;
+const MAXBUF = 500;
 const SERVER_IP = [0xc0, 0xa8, 0x01, 0x09]; // 192.168.1.9
 const BB_IP = [0xc0, 0xa8, 0x01, 0x03]; // 192.168.1.3
 const SERVER_NAME = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84]; // ASCII ['B','E','A','G','L','E','B','O','O','T']
 
 // Size of all protocol headers
-const RNDIS_SIZE = 44;
+const RNDIS_SIZE = 0;
 const ETHER_SIZE = 14;
 const ARP_SIZE = 28;
 const IPV4_SIZE = 20;
@@ -42,10 +43,22 @@ const EventEmitter = require('events').EventEmitter;
 const emitter = new EventEmitter();
 const fs = require('fs');
 const path = require('path');
+const network = require('network');
+const cap = require('cap').Cap;
+const ping = require('ping');
 const os = require('os');
 const platform = os.platform();
 const rndis_win = require('./src/rndis_win');
 const emitterMod = new EventEmitter(); // Emitter for module status
+const capture = new cap();
+
+const proxyConfig = {
+  Host: {},
+  BB: {},
+  ProxyIp: [],
+  ArpList: {},
+  ActiveInterface: {}
+};
 
 const progress = {
   percent: 0, // Percentage for progress
@@ -57,7 +70,7 @@ const progress = {
 
 // TFTP server for USB Mass Storage, binaries must be placed in 'bin/'
 exports.usbMassStorage = () => {
-  return exports.tftpServer([{
+  return exports.serveClient([{
     vid: ROMVID,
     pid: ROMPID,
     bootpFile: 'u-boot-spl.bin'
@@ -66,14 +79,21 @@ exports.usbMassStorage = () => {
     pid: SPLPID,
     bootpFile: 'u-boot.img'
   }, {
-    vid: DEVVID,
-    pid: DEVPID
+    vid: DEBIAN_VID,
+    pid: DEBIAN_PID
   }]);
 };
 
+// Proxy Server for Debian
+exports.proxyServer = () => {
+  return exports.serveClient([{
+    vid: DEBIAN_VID,
+    pid: DEBIAN_PID
+  }]);
+};
 
-// TFTP server for any file transfer
-exports.tftpServer = (serverConfigs) => {
+// Configuring Server to serve Client
+exports.serveClient = (serverConfigs) => {
   let foundDevice;
   progress.increment = (100 / (serverConfigs.length * 10));
   usb.on('attach', (device) => {
@@ -84,8 +104,8 @@ exports.tftpServer = (serverConfigs) => {
       case usb.findByIds(SPLVID, SPLPID):
         foundDevice = (device.deviceDescriptor.bNumConfigurations == 2) ? 'SPL' : 'UMS';
         break;
-      case usb.findByIds(DEVVID, DEVPID):
-        foundDevice = 'DEV';
+      case usb.findByIds(DEBIAN_VID, DEBIAN_PID):
+        foundDevice = 'DEBIAN';
         break;
       default:
         foundDevice = `Device ${device.deviceDescriptor}`;
@@ -109,6 +129,9 @@ exports.tftpServer = (serverConfigs) => {
   usb.on('detach', () => {
     emitterMod.emit('disconnect', foundDevice);
   });
+
+  // Configure Proxy Server for Debian Device
+  if (serverConfigs[0].vid === DEBIAN_VID && serverConfigs[0].pid === DEBIAN_PID) emitter.emit('configureProxy');
   return emitterMod; // Event Emitter for progress
 };
 
@@ -134,29 +157,119 @@ const transfer = (server) => {
   }
 };
 
+// Get address array from string
+const getAddressArray = (addString) => {
+  const addArray = [];
+  let isIp = false;
+  let addressPart = '';
+  for (let i = 0; i < addString.length; i++) {
+    if (addString.charAt(i) === '.') {
+      isIp = true;
+      addArray.push(parseInt(addressPart));
+      addressPart = '';
+    }
+    else if (addString.charAt(i) === ':') {
+      addArray.push(parseInt(addressPart, 16));
+      addressPart = '';
+    }
+    else addressPart += addString.charAt(i);
+    if (i === addString.length - 1) {
+      addArray.push(parseInt(addressPart, (isIp) ? 0 : 16));
+    }
+  }
+  return addArray;
+};
+
+// Compare IP Addresses
+const compareIp = (ip1, ip2) => {
+  let i = 0;
+  while (i < 4) {
+    if (ip1[i] === ip2[i]) i++;
+    else break;
+  }
+  if (i === 4) return true;
+  else return false;
+};
+
+// Find available IP address from Host's subnet
+const getAvailableIp = async (hostIp) => {
+  const pingConfig = {
+    timeout: 1
+  };
+  const incrementIp = (ip, inc) => {
+    let newIp = '';
+    let lastPart = '';
+    let dotCount = 0;
+    for (let i = 0; i < ip.length; i++) {
+      if (dotCount < 3) newIp += ip.charAt(i);
+      else lastPart += ip.charAt(i);
+      if (ip.charAt(i) === '.') dotCount++;
+    }
+    lastPart = parseInt(lastPart) + inc;
+    if (lastPart > 254) lastPart = 2;
+    return newIp + lastPart;
+  };
+  let host = incrementIp(hostIp, 10);
+  let isAvailable = false;
+  while (!isAvailable) {
+    let result = await ping.promise.probe(host, pingConfig);
+    isAvailable = !result.alive;
+    if (isAvailable) break;
+    host = incrementIp(host, 1);
+  }
+  return host;
+};
+
+// Configure Proxy Server
+emitter.on('configureProxy', () => {
+  // Proxy Server configs
+  network.get_active_interface((error, activeInterface) => {
+    if (!error) {
+      proxyConfig.Host = {
+        SourceMac: getAddressArray(activeInterface.mac_address),
+        SourceIp: getAddressArray(activeInterface.ip_address),
+        GatewayIp: getAddressArray(activeInterface.gateway_ip)
+      };
+      proxyConfig.BB = {
+        SourceIp: [192, 168, 6, 2],
+        GatewayIp: [192, 168, 6, 1],
+      };
+      proxyConfig.ActiveInterface = activeInterface;
+      getAvailableIp(activeInterface.ip_address).then((proxyIp) => {
+        proxyConfig.ProxyIp = getAddressArray(proxyIp);
+        console.log(`Using Proxy IP Address: ${proxyIp}`);
+      });
+    }
+  });
+});
+
+
 const onOpen = (server) => {
   try {
-    const deviceInterface = server.device.interface(1); // Select interface 1 for BULK transfers
-    if (platform != 'win32') { // Not supported in Windows
-      // Detach Kernel Driver
-      if (deviceInterface && deviceInterface.isKernelDriverActive()) {
-        deviceInterface.detachKernelDriver();
-      }
-    }
-    deviceInterface.claim();
+    let interfaceNumber = 1; // Interface for data transfer
 
     // Claim CDC interface to disable networking by Host for Device running Debian
-    if (server.foundDevice === 'DEV') {
-      const devInt = server.device.interface(3);
-      if (devInt && devInt.isKernelDriverActive()) {
-        devInt.detachKernelDriver();
-      }
-      devInt.claim();
+    if (server.foundDevice === 'DEBIAN') {
+      [0, 1, 2, 3, 4, 5].forEach((i) => {
+        const devInt = server.device.interface(i);
+        if (platform != 'win32') {
+          if (devInt && devInt.isKernelDriverActive()) {
+            devInt.detachKernelDriver();
+          }
+        }
+        devInt.claim();
+      });
+      interfaceNumber = 3;
     }
 
-    // Set endpoints for usb transfer
-    server.inEndpoint = deviceInterface.endpoint(deviceInterface.endpoints[0].address);
-    server.outEndpoint = deviceInterface.endpoint(deviceInterface.endpoints[1].address);
+    server.deviceInterface = server.device.interface(interfaceNumber); // Select interface 1 for BULK transfers
+    if (platform != 'win32') { // Not supported in Windows
+      // Detach Kernel Driver
+      if (server.deviceInterface && server.deviceInterface.isKernelDriverActive()) {
+        server.deviceInterface.detachKernelDriver();
+      }
+    }
+    server.deviceInterface.claim();
   } catch (err) {
     emitterMod.emit('error', `Can't claim interface ${err}`);
     return;
@@ -207,64 +320,272 @@ const onOpen = (server) => {
     });
   }
 
-  try {
-    // Set endpoint transfer type
-    server.inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-    server.outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-  } catch (err) {
-    emitterMod.emit('error', `Interface disappeared: ${err}`);
-    return;
-  }
+  if (server.foundDevice === 'DEBIAN') {
+    server.deviceInterface.setAltSetting(1, (error) => {
+      if (error) console.log(error);
+      else {
+        try {
+          // Set endpoints for usb transfer
+          server.inEndpoint = server.deviceInterface.endpoint(server.deviceInterface.endpoints[0].address);
+          server.outEndpoint = server.deviceInterface.endpoint(server.deviceInterface.endpoints[1].address);
 
-  // Start polling the In Endpoint for transfers
-  server.inEndpoint.startPoll(1, MAXBUF);
-  emitter.emit('inTransfer', server);
+          // Set endpoint transfer type
+          server.inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+          server.outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+        } catch (err) {
+          emitterMod.emit('error', `Interface disappeared: ${err}`);
+          return;
+        }
+
+        // Start polling the In Endpoint for transfers
+        server.inEndpoint.startPoll(1, MAXBUF);
+
+        const device = cap.findDevice(proxyConfig.ActiveInterface.ip_address);
+        const filter = '';
+        const bufSize = 10 * 1024 * 1024;
+        let buffer = Buffer.alloc(65535);
+        capture.open(device, filter, bufSize, buffer);
+
+        capture.on('packet', () => {
+          const request = identifyRequest(buffer);
+          if (request === 'ARP') {
+            const receivedARP = protocols.parse_arp(buffer.slice(ETHER_SIZE));
+            if (receivedARP.ip_dest[3] === proxyConfig.ProxyIp[3]) {
+
+              // Response Host.GatewayIp is at Host.GatewayMac
+              if (receivedARP.opcode === ARP_OPCODE_REPLY) {
+                if (receivedARP.ip_source[3] === proxyConfig.Host.GatewayIp[3]) {
+                  proxyConfig.Host.GatewayMac = receivedARP.hw_source;
+                  const etherSrc = proxyConfig.BB.GatewayMac;
+                  const etherDst = proxyConfig.BB.SourceMac;
+                  const ipSrc = proxyConfig.BB.GatewayIp;
+                  const ipDst = proxyConfig.BB.SourceIp;
+                  const arpHeader = protocols.make_arp(ARP_OPCODE_REPLY, etherSrc, ipSrc, etherDst, ipDst);
+                  const etherHeader = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_ARP);
+                  const proxyArp = Buffer.concat([etherHeader, arpHeader], ETHER_SIZE + ARP_SIZE);
+                  emitter.emit('outTransfer', server, proxyArp, 'ARP');
+                }
+                else {
+                  proxyConfig.ArpList[receivedARP.ip_source[3]] = receivedARP.hw_source;
+                }
+              }
+
+              // Request Who has ProxyIp ? Tell SomeIp
+              if (receivedARP.opcode === ARP_OPCODE_REQUEST) {
+                const etherSrc = proxyConfig.Host.SourceMac;
+                const etherDst = receivedARP.hw_source;
+                const ipSrc = proxyConfig.ProxyIp;
+                const ipDst = receivedARP.ip_source;
+                const arpHeader = protocols.make_arp(ARP_OPCODE_REPLY, etherSrc, ipSrc, etherDst, ipDst);
+                const etherHeader = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_ARP);
+                const proxyArp = Buffer.concat([etherHeader, arpHeader], ETHER_SIZE + ARP_SIZE);
+                sendToNetwork(proxyArp);
+              }
+            }
+          }
+
+          else {
+            const etherSrc = proxyConfig.BB.GatewayMac;
+            const etherDst = proxyConfig.BB.SourceMac;
+            const receivedIP = protocols.parseIpv4(buffer.slice(ETHER_SIZE));
+            if (receivedIP.DestinationAddress[3] === proxyConfig.ProxyIp[3]) {
+              let ipSrc;
+              if (compareIp(receivedIP.SourceAddress, proxyConfig.Host.GatewayIp)) {
+                ipSrc = proxyConfig.BB.GatewayIp;
+              }
+              else ipSrc = receivedIP.SourceAddress;
+              const ipHeader = {
+                Version: receivedIP.Version,
+                IHL: receivedIP.IHL,
+                TypeOfService: receivedIP.TypeOfService,
+                TotalLength: receivedIP.TotalLength,
+                Identification: receivedIP.Identification,
+                Flags: receivedIP.Flags,
+                FragmentOffset: receivedIP.FragmentOffset,
+                TimeToLIve: receivedIP.TimeToLIve,
+                Protocol: receivedIP.Protocol,
+                HeaderChecksum: 0,
+                SourceAddress: ipSrc,
+                DestinationAddress: proxyConfig.BB.SourceIp
+              };
+              let ipPayload = buffer.slice(ETHER_SIZE + IPV4_SIZE, ETHER_SIZE + ipHeader.TotalLength);
+              if (ipHeader.Protocol === IP_TCP) {
+                ipPayload = protocols.regenerateTcpChecksum(ipHeader, ipPayload);
+              }
+              if (ipHeader.Protocol === IPUDP) {
+                ipPayload = Buffer.concat([ipPayload.slice(0, 6), Buffer.from([0, 0]), ipPayload.slice(8)]);
+              }
+              const ipBuff = protocols.encodeIpv4(ipHeader);
+              const etherBuff = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_IPV4);
+              const changedPacket = Buffer.concat([etherBuff, ipBuff, ipPayload]);
+              emitter.emit('outTransfer', server, changedPacket, 'IP');
+            }
+          }
+        });
+        emitter.emit('inTransfer', server);
+
+      }
+    });
+  }
+  else {
+    try {
+      // Set endpoints for usb transfer
+      server.inEndpoint = server.deviceInterface.endpoint(server.deviceInterface.endpoints[0].address);
+      server.outEndpoint = server.deviceInterface.endpoint(server.deviceInterface.endpoints[1].address);
+
+      // Set endpoint transfer type
+      server.inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+      server.outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
+    } catch (err) {
+      emitterMod.emit('error', `Interface disappeared: ${err}`);
+      return;
+    }
+
+    // Start polling the In Endpoint for transfers
+    server.inEndpoint.startPoll(1, MAXBUF);
+    emitter.emit('inTransfer', server);
+  }
 };
 
+const sendToNetwork = (data) => {
+  try {
+
+    // send will not work if pcap_sendpacket is not supported by underlying `device`
+    capture.send(data, data.length);
+  } catch (e) {
+    console.log(`Error sending packet: ${e}`);
+  }
+};
 
 
 // Event for inEnd transfer
 emitter.on('inTransfer', (server) => {
   server.inEndpoint.on('data', (data) => {
-    const request = identifyRequest(data);
-    console.log(request);
-    switch (request) {
-      case 'notIdentified':
-        emitterMod.emit('error', `${request} packet type`);
-        break;
-      case 'TFTP':
-        updateProgress('TFTP request recieved');
-        emitter.emit('processTFTP', server, data);
-        break;
-      case 'BOOTP':
-        updateProgress('BOOTP request recieved');
-        emitter.emit('outTransfer', server, processBOOTP(server, data), request);
-        break;
-      case 'ARP':
-        emitter.emit('outTransfer', server, processARP(server, data), request);
-        break;
-      case 'TFTP_Data':
-        if (server.tftp.i <= server.tftp.blocks) { // Transfer until all blocks of file are transferred
-          emitter.emit('outTransfer', server, processTFTP_Data(server), request);
-        } else {
-          updateProgress(`${server.foundDevice} TFTP transfer complete`);
-          server.inEndpoint.stopPoll();
+
+    if (server.foundDevice === 'DEBIAN') {
+      const etherHeader = protocols.decode_ether(data);
+      // Update Source and Gateway Mac for BeagleBone
+      if (!proxyConfig.BB.SourceMac) {
+        proxyConfig.BB.SourceMac = etherHeader.h_source;
+        let tempMac = etherHeader.h_source;
+        let gatewayMac = [];
+        tempMac.forEach((part) => {
+          if (tempMac.indexOf(part) === 5) gatewayMac.push(part - 1);
+          else gatewayMac.push(part);
+        });
+        proxyConfig.BB.GatewayMac = gatewayMac;
+        console.log(proxyConfig.BB);
+      }
+      const request = identifyRequest(data);
+      if (request === 'ARP') {
+        const receivedARP = protocols.parse_arp(data.slice(ETHER_SIZE));
+
+        // ARP request Who has 192.168.6.1? Tell 192.168.6.2
+        if (receivedARP.opcode === ARP_OPCODE_REQUEST && receivedARP.ip_dest[2] === 6) {
+
+          // Change it to Who has Host.GatewayIP? Tell ProxyIp
+          const etherSrc = proxyConfig.Host.SourceMac;
+          const etherDst = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+          const ipSrc = proxyConfig.ProxyIp;
+          const ipDst = proxyConfig.Host.GatewayIp;
+          const arpHeader = protocols.make_arp(ARP_OPCODE_REQUEST, etherSrc, ipSrc, etherDst, ipDst);
+          const etherHeader = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_ARP);
+          const changedPacket = Buffer.concat([etherHeader, arpHeader]);
+          sendToNetwork(changedPacket);
         }
-        break;
-      case 'NC':
-        emitter.emit('nc', server, data);
-        break;
-      case 'mDNS':
-        parseDNS(server, data);
-        break;
-      case 'ICMPv6':
-        processIcmpv6(server, data);
-        break;
-      case 'IGMP':
-        processIgmp(server, data);
-        break;
-      default:
-        console.log(request);
+      }
+      else {
+        const etherSrc = proxyConfig.Host.SourceMac;
+        let etherDst;
+        const ether = protocols.decode_ether(data);
+        if (proxyConfig.Host.GatewayMac) {
+          etherDst = proxyConfig.Host.GatewayMac;
+        }
+        else etherDst = ether.h_dest;
+        const receivedIP = protocols.parseIpv4(data.slice(ETHER_SIZE));
+        let ipDst;
+        if (receivedIP.DestinationAddress[0] === proxyConfig.BB.GatewayIp[0]) {
+          if (receivedIP.DestinationAddress[2] === proxyConfig.BB.GatewayIp[2]) {
+            ipDst = proxyConfig.Host.GatewayIp;
+          }
+          else {
+            ipDst = receivedIP.DestinationAddress;
+            if (proxyConfig.ArpList[receivedIP.DestinationAddress[3]]) {
+              etherDst = proxyConfig.ArpList[receivedIP.DestinationAddress[3]];
+            }
+            else {
+              // Send ARP for host in local subnet
+              const etherSrc = proxyConfig.Host.SourceMac;
+              const etherDst = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+              const ipSrc = proxyConfig.ProxyIp;
+              const ipDst = receivedIP.DestinationAddress;
+              const arpHeader = protocols.make_arp(ARP_OPCODE_REQUEST, etherSrc, ipSrc, etherDst, ipDst);
+              const etherHeader = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_ARP);
+              const changedPacket = Buffer.concat([etherHeader, arpHeader]);
+              sendToNetwork(changedPacket);
+            }
+          }
+        }
+        else ipDst = receivedIP.DestinationAddress;
+        const ipHeader = {
+          Version: receivedIP.Version,
+          IHL: receivedIP.IHL,
+          TypeOfService: receivedIP.TypeOfService,
+          TotalLength: receivedIP.TotalLength,
+          Identification: receivedIP.Identification,
+          Flags: receivedIP.Flags,
+          FragmentOffset: receivedIP.FragmentOffset,
+          TimeToLIve: receivedIP.TimeToLIve,
+          Protocol: receivedIP.Protocol,
+          HeaderChecksum: 0,
+          SourceAddress: proxyConfig.ProxyIp,
+          DestinationAddress: ipDst
+        };
+        let ipPayload = data.slice(ETHER_SIZE + IPV4_SIZE, ETHER_SIZE + ipHeader.TotalLength);
+        if (ipHeader.Protocol === IP_TCP) {
+          ipPayload = protocols.regenerateTcpChecksum(ipHeader, ipPayload);
+        }
+        if (ipHeader.Protocol === IPUDP) {
+          ipPayload = Buffer.concat([ipPayload.slice(0, 6), Buffer.from([0, 0]), ipPayload.slice(8)]);
+        }
+        const ipBuff = protocols.encodeIpv4(ipHeader);
+        const etherBuff = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_IPV4);
+        const changedPacket = Buffer.concat([etherBuff, ipBuff, ipPayload]);
+        sendToNetwork(changedPacket);
+      }
+    }
+    else {
+      const request = identifyRequest(data);
+      console.log(request);
+      switch (request) {
+        case 'notIdentified':
+          emitterMod.emit('error', `${request} packet type`);
+          break;
+        case 'TFTP':
+          updateProgress('TFTP request recieved');
+          emitter.emit('processTFTP', server, data);
+          break;
+        case 'BOOTP':
+          updateProgress('BOOTP request recieved');
+          emitter.emit('outTransfer', server, processBOOTP(server, data), request);
+          break;
+        case 'ARP':
+          emitter.emit('outTransfer', server, processARP(server, data), request);
+          break;
+        case 'TFTP_Data':
+          if (server.tftp.i <= server.tftp.blocks) { // Transfer until all blocks of file are transferred
+            emitter.emit('outTransfer', server, processTFTP_Data(server), request);
+          } else {
+            updateProgress(`${server.foundDevice} TFTP transfer complete`);
+            server.inEndpoint.stopPoll();
+          }
+          break;
+        case 'NC':
+          emitter.emit('nc', server, data);
+          break;
+        default:
+          console.log(request);
+      }
     }
   });
   server.inEndpoint.on('error', (error) => {
@@ -274,13 +595,10 @@ emitter.on('inTransfer', (server) => {
 
 
 // Event for outEnd Transfer
-emitter.on('outTransfer', (server, data, request) => {  
+emitter.on('outTransfer', (server, data, request) => {
   server.outEndpoint.transfer(data, (error) => {
     if (!error) {
       if (request == 'BOOTP') updateProgress(`${request} reply done`);
-      if (request == 'DHCP') console.log('DHCP done');
-      if (request == 'ICMPv6') console.log('ICMPv6 done');
-      if (request == 'MDNS') console.log('MDNS done');
     }
   });
 });
@@ -306,7 +624,7 @@ const identifyRequest = (buff) => {
       }
       if (dPort == NETCONSOLE_UDP_PORT) return 'NC';
       if (dPort == MDNS_UDP_PORT && sPort == MDNS_UDP_PORT) return 'mDNS';
-      emitterMod.emit('error', `Unidentified UDP packet type: sPort=${sPort} dPort=${dPort}`);
+      //emitterMod.emit('error', `Unidentified UDP packet type: sPort=${sPort} dPort=${dPort}`);
     }
   }
   if (ether.h_proto === ETH_TYPE_IPV6) {
@@ -449,272 +767,4 @@ const extractName = (data) => {
     nameCount++;
   }
   return name;
-};
-
-// Function to process mDNS
-const parseDNS = (server, data) => {
-  const buf = data.slice(RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + UDP_SIZE);
-  const parsedDns = protocols.parse_dns(buf);
-  console.log(parsedDns.Header);/*
-  parsedDns.Questions.forEach((question) => {
-    console.log(question.name);
-    console.log(question.otherFields);
-  });
-  parsedDns.NameServers.forEach((question) => {
-    console.log(question.name);
-    console.log(question.otherFields);
-  });
-  parsedDns.AnswerRecords.forEach((question) => {
-    console.log(question.name);
-    console.log(question.otherFields);
-  });*/
-  //console.log(protocols.parse_dns(protocols.encodeMdns(parsedDns)));
-
-  let mdnsPacket = {
-    Header: {
-      ID: 0,
-      QR: 0,
-      Opcode: 0,
-      AA: 0,
-      TC: 0,
-      RD: 0,
-      RA: 0,
-      Z: 0,
-      RCode: 0,
-      QCount: 2,
-      ANCount: 0,
-      NSCount: 2,
-      ARCount: 0
-    },
-    Questions: [
-      {
-        name: ['a', '6', '1', '0', 'd', '1', 'b', '1', '2', 'f', '7', 'f', 'e', '5', 'b', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '8', 'e', 'f', 'ip6', 'arpa'],
-        otherFields: {
-          QType: 255,
-          UnicastResponse: 0,
-          QClass: 1
-        }
-      },
-      {
-        name: ['BeagleBoot', 'local'],
-        otherFields: {
-          QType: 255,
-          UnicastResponse: 0,
-          QClass: 1
-        }
-      }
-    ],
-    AnswerRecords: [],
-    NameServers: [
-      {
-        name: ['BeagleBoot', 'local'],
-        otherFields: {
-          RRType: 28,
-          CacheFlush: 0,
-          Class: 1,
-          TTL: 120,
-          RDLength: 16,
-          Address: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0x0b, 0x5e, 0xf7, 0xf2, 0x1b, 0x1d, 0x01, 0x6a] 
-        }
-      },
-      {
-        name: ['a', '6', '1', '0', 'd', '1', 'b', '1', '2', 'f', '7', 'f', 'e', '5', 'b', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '8', 'e', 'f', 'ip6', 'arpa'],
-        otherFields: {
-          RRType: 12,
-          CacheFlush: 0,
-          Class: 1,
-          TTL: 120,
-          RDLength: 2
-        },
-        DomainName: ['BeagleBoot', 'local']
-      }
-    ],
-    AdditionalRecords: []
-  };
-  const mdnsBuff = protocols.encodeMdns(mdnsPacket);
-  const rndisBuff = protocols.make_rndis(FULL_SIZE - RNDIS_SIZE);
-  const etherSrc = [0x33, 0x33, 0, 0, 0, 0xfb];
-  const etherDst = [0x43, 0xa3, 0x16, 0xdf, 0x50, 0xc1];
-  const etherBuff = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_IPV6);
-  const sourceAdd = [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0x0b, 0x5e, 0xf7, 0xf2, 0x1b, 0x1d, 0x01, 0x6a];
-  const destAdd = [0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xfb];
-  const ipv6Header = {
-    //Version: 6,
-    //TrafficClass: 0,
-    //FlowLabel: 0xbecee,
-    VTF: [0x60, 0x0b, 0xec, 0xee],
-    PayloadLength: UDP_SIZE + mdnsBuff.length,
-    NextHeader: IPUDP,
-    HopLimit: 255,
-    SourceAddress: sourceAdd,
-    DestinationAddress: destAdd
-  };
-  const ipBuff = protocols.encodeIpv6(ipv6Header);
-  const udpBuff = protocols.make_udp(mdnsBuff.length, MDNS_UDP_PORT, MDNS_UDP_PORT);
-  const outputBuff = Buffer.concat([rndisBuff, etherBuff, ipBuff, udpBuff, mdnsBuff]);
-  emitter.emit('outTransfer', server, outputBuff, 'MDNS');
-
-  mdnsPacket.Questions = [];
-  mdnsPacket.NameServers = [];
-  mdnsPacket.AnswerRecords = [
-    {
-      name: ['a', '6', '1', '0', 'd', '1', 'b', '1', '2', 'f', '7', 'f', 'e', '5', 'b', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '8', 'e', 'f', 'ip6', 'arpa'],
-      otherFields: {
-        RRType: 12,
-        CacheFlush: 0,
-        Class: 1,
-        TTL: 120,
-        RDLength: 2
-      }
-    },
-    {
-      name: ['BeagleBoot', 'local'],
-      otherFields: {
-        RRType: 28,
-        CacheFlush: 0,
-        Class: 1,
-        TTL: 120,
-        RDLength: 16,
-        Address: [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0x0b, 0x5e, 0xf7, 0xf2, 0x1b, 0x1d, 0x01, 0x6a] 
-      }
-    }
-  ];
-  processDhcp(server, data);
-};
-
-const processIcmpv6 = (server, data) => {
-  const ipv6Option = protocols.parseIpv6Option(data.slice(RNDIS_SIZE + ETHER_SIZE + IPV6_SIZE));
-  const optionLength = (ipv6Option.Length + 1) * 8; // https://www.ietf.org/rfc/rfc2460.txt#Section-4.3
-  const icmp = protocols.parseIcmp(data.slice(RNDIS_SIZE + ETHER_SIZE + IPV6_SIZE + optionLength));
-  console.log(icmp);
-
-  const rndisBuff = protocols.make_rndis(FULL_SIZE - RNDIS_SIZE);
-  const etherSrc = [0x04, 0xa3, 0x16, 0xdf, 0x50, 0xc1];
-  const etherDst = [0x33, 0x33, 0x00, 0x00, 0x00, 0x16];
-  const etherBuff = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_IPV4);
-  const sourceAdd = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  const destAdd = [0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x16];
-  const ipv6Header = {
-    //Version: 6,
-    //TrafficClass: 0,
-    //FlowLabel: 0,
-    VTF: [0x60, 0x00, 0x00, 0x00],
-    PayloadLength: 36,
-    NextHeader: 58,
-    HopLimit: 1,
-    SourceAddress: sourceAdd,
-    DestinationAddress: destAdd
-  };
-  const ipBuff = protocols.encodeIpv6(ipv6Header);
-  const pseudoIpv6 = {
-    SourceAddress: sourceAdd,
-    DestinationAddress: destAdd,
-    Length: ICMPV6_LENGTH,
-    Zeros: [0,0,0],
-    NextHeader: IPV6_ICMP
-  };
-  const icmpHeader = {
-    Type: 143, // Multicast Listener
-    Code: 0,
-    Checksum: 0,
-    Reserved: 0,
-    MulticastRecords: 1
-  };
-  const multicastRecords = {
-    Type: 4,
-    AuxDataLen: 0,
-    NumberOfSources: 0,
-    MulticastAddress: [0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0xff, 0x1d, 0x01, 0x6a]
-  };
-  const icmpBuff = protocols.encodeIcmp(icmpHeader, pseudoIpv6, multicastRecords);
-  const icmpPacket = Buffer.concat([rndisBuff, etherBuff, ipBuff, icmpBuff]);
-  emitter.emit('outTransfer', server, icmpPacket, 'ICMPv6');
-};
-
-const processIgmp = (server, data) => {
-  const rndis = protocols.make_rndis(FULL_SIZE - RNDIS_SIZE);
-  const etherSrc = [0x04, 0xa3, 0x16, 0xdf, 0x50, 0xc1];
-  const etherDst = [0x01, 0x00, 0x5e, 0x00, 0x00, 0x16];
-  const etherBuff = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_IPV4);
-  const ipHeader = {
-    Version: 4,
-    IHL: 6,
-    TypeOfService: 0xc0,
-    TotalLength: 40,
-    Identification: 0,
-    Flags: 0x02,
-    FragmentOffset: 0,
-    TimeToLIve: 1,
-    Protocol: IP_IGMP,
-    HeaderChecksum: 0,
-    SourceAddress: [192, 168, 7, 1],
-    DestinationAddress: [224, 0, 0, 22]
-  };
-  const ipOptions = {
-    Type: 148,
-    Length: 4,
-    Data: 0
-  };
-  const ipBuff = protocols.encodeIpv4(ipHeader, ipOptions);
-  const igmp = data.slice(RNDIS_SIZE + ETHER_SIZE + IPV4_SIZE + 4);
-  const outputData = Buffer.concat([rndis, etherBuff, ipBuff, igmp], MAXBUF);
-  emitter.emit('outTransfer', server, outputData, 'IGMP');
-  processDhcp(server, data);
-};
-
-const processDhcp = (server, data) => {
-  const bootp = {
-    MessageType: 1,
-    HardwareType: 1,
-    HwAddressLength: 6,
-    HopCount: 0,
-    TransactionId: 0x9000d259,
-    SecondsElapsed: 3,
-    Flags: 0,
-    ClientIpAddress: [0, 0, 0, 0],
-    YourIpAddress: [0, 0, 0, 0],
-    NextServerIpAddress: [0, 0, 0, 0],
-    RelayAgentIpAddress: [0, 0, 0, 0],
-    ClientMacAddress: [0x04, 0xa3, 0x16, 0xdf, 0x50, 0xc1],
-    MacOffset: Array.apply(null, Array(10)).map(Number.prototype.valueOf,0),
-    ServerNameOffset: Array.apply(null, Array(64)).map(Number.prototype.valueOf,0),
-    BootFileName: Array.apply(null, Array(128)).map(Number.prototype.valueOf,0),
-    MagicCookie: 'DHCP',
-    Option1: 53,
-    Length1: 1,
-    DhcpRequest: 3,
-    Optionx: 50,
-    Lengthx: 4,
-    ReqIp: [192, 168, 7, 1],
-    Option2: 12,
-    Length2: 10,
-    HostName: 'BeagleBoot',
-    Option3: 55,
-    Length3: 16,
-    ParameterRequest: [1, 28, 2, 3, 15, 6, 119, 12, 44, 47, 26, 121, 42, 249, 33, 252],
-    Option4: 255
-  };
-  const bootpBuff = protocols.encodeBootp(bootp);
-  const rndis = protocols.make_rndis(FULL_SIZE - RNDIS_SIZE);
-  const etherSrc = [0x04, 0xa3, 0x16, 0xdf, 0x50, 0xc1];
-  const etherDst = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
-  const etherBuff = protocols.make_ether2(etherDst, etherSrc, ETH_TYPE_IPV4);
-  const ipHeader = {
-    Version: 4,
-    IHL: 5,
-    TypeOfService: 0x10,
-    TotalLength: IPV4_SIZE + UDP_SIZE + BOOTP_SIZE,
-    Identification: 0,
-    Flags: 0x00,
-    FragmentOffset: 0,
-    TimeToLIve: 128,
-    Protocol: IPUDP,
-    HeaderChecksum: 0,
-    SourceAddress: [0, 0, 0, 0],
-    DestinationAddress: [255, 255, 255, 255]
-  };
-  const ipBuff = protocols.encodeIpv4(ipHeader, {});
-  const udpBuff = protocols.make_udp(BOOTP_SIZE, 68, 67);
-  const outputData = Buffer.concat([rndis, etherBuff, ipBuff, udpBuff, bootpBuff], FULL_SIZE);
-  emitter.emit('outTransfer', server, outputData, 'DHCP');
 };

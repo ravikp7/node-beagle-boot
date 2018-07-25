@@ -6,6 +6,7 @@ var mDns = require('./dns');
 var ip = require('./ip');
 var icmp = require('./icmp');
 var bootP = require('./bootp');
+var tcp = require('./tcp');
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -335,7 +336,7 @@ function make_udp(udpData_len, srcPort, dstPort){
     { udpSrc: srcPort},         
     { udpDst: dstPort},         
     { udpLen: udpData_len+8},       
-    { chkSum: 0x8b8c}                
+    { chkSum: 0}                
   ];
   return fix_buff(udp_e.encode(udp));
 }
@@ -498,3 +499,4 @@ exports.encodeIpv6 = ip.encodeIpv6;
 exports.parseIpv6Option = ip.parseIpv6Option;
 exports.encodeIcmp = icmp.encodeIcmp;
 exports.encodeMdns = mDns.encodeMdns;
+exports.regenerateTcpChecksum = tcp.regenerateTcpChecksum;
