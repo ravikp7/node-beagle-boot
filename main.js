@@ -141,17 +141,8 @@ const transfer = (server) => {
   if (server.foundDevice == 'ROM') progress.percent = progress.increment;
   updateProgress(`${server.foundDevice} ->`);
   try {
-    if (server.foundDevice == 'SPL' && platform != 'linux') {
-      server.device.open(false);
-      server.device.setConfiguration(2, (err) => {
-        if (err) emitterMod.emit('error', `Can't set configuration ${err}`);
-        server.device.__open();
-        onOpen(server);
-      });
-    } else {
       server.device.open();
       onOpen(server);
-    }
   } catch (ex) {
     emitterMod.emit('error', `Can't open device ${ex}`);
   }
