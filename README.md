@@ -52,26 +52,39 @@ npm start
 It should now boot BB into USB Mass Storage Mode.
 
 ___
-## Target binary build instructions:
+## U-boot binary build instructions:
+* Use your preferred Cross Compiler or set up one from [instructions here](http://eewiki.net/display/linuxonarm/BeagleBone+Black#BeagleBoneBlack-ARMCrossCompiler:GCC)
 
-Use [Buildroot](https://buildroot.net) to build your target image.
-
-* Get the PocketBeagle NETCONSOLE sources for Buildroot
-
-The latest commit tested at this writing is 15721981162c23f7a9744d119f7dbb6f335fcbd8.
-
-```sh
-git clone https://github.com/jadonk/buildroot
-cd buildroot
-git checkout add-pocketbeagle
+* Get the latest U-boot sources and checkout v2018.03-rc4
 ```
+git clone https://github.com/u-boot/u-boot.git
+cd u-boot
+git checkout v2018.07 -b tmp
+```
+* Apply default UMS(USB Mass Storage) Patch
+
+It changes default bootcommand for usb mass storage and changes spl usb RNDIS config to 1 for Windows and OSX compatibility
+```
+wget https://raw.githubusercontent.com/ravikp7/node-beagle-boot/tcpip/ums-patch.diff
+git apply ums-patch.diff
+```
+* Run the following command for config:
+```
+make ARCH=arm CROSS_COMPILE=${CC} am335x_evm_usbspl_defconfig
+```
+* To enable USB Mass Storage, run command
+```
+make menuconfig
+```
+Select `Command Line Interface` -> `Device Access Commands` -> `UMS usb mass storage`
+
+Then 'Save' and 'Exit'
 
 * Run the following command to compile:
 ```
-make pocketbeagle_defconfig
-make
+make ARCH=arm CROSS_COMPILE=${CC}
 ```
-Now SPL binary is `output/images/u-boot-spl.bin` and uboot binary is `output/images/u-boot.img`
+Now SPL binary is `spl/u-boot-spl.bin` and uboot binary is `u-boot.img`
 
 ___
 ## API Documentation
@@ -121,12 +134,12 @@ ___
 #### For any File transfer to respective device
 ### require('beagle-boot').tftpServer( [ `file transfer objects` ] ) => `EventEmitter`
 This `EventEmitter` instance emits the same above events.
-#### `server objects` are of following form:
+#### `file transfer objects` are of following form:
 ```
 {
     vid: vID,     // Device Vendor ID as integer
     pid: pID,     // Device Product ID as integer
-    bootpFile: 'fileName'   // Binaries must be placed in 'bin/'
+    file_path: 'path'   // Path of file to be transferred
 }
 ```
 `The order of objects doesn't matter here`
@@ -135,8 +148,8 @@ This `EventEmitter` instance emits the same above events.
 var BB = require('beagle-boot');
 
 var emitter = BB.tftpServer([
-     {vid: 0x0451, pid: 0x6141, bootpFile: 'u-boot-spl.bin'},
-     {vid: 0x525, pid: 0xa4a2, bootpFile: 'u-boot.img'}
+    {vid: 0x0451, pid: 0x6141, file_path: './bin/spl'},
+    {vid: 0x525, pid: 0xa4a2, file_path: './bin/uboot'}
 ]);
 ```
 #### This API can be used to boot ramdisk also
