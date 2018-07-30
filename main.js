@@ -25,7 +25,7 @@ const BB_IP = [0xc0, 0xa8, 0x01, 0x03]; // 192.168.1.3
 const SERVER_NAME = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84]; // ASCII ['B','E','A','G','L','E','B','O','O','T']
 
 // Size of all protocol headers
-const RNDIS_SIZE = 0;
+const RNDIS_SIZE = 44;
 const ETHER_SIZE = 14;
 const ARP_SIZE = 28;
 const IPV4_SIZE = 20;
