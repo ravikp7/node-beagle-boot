@@ -3,7 +3,7 @@ language: node_js
 
 node_js:
   - "node"
-  - "7"
+  - "8"
   - "6"
 
 env:
@@ -17,6 +17,8 @@ addons:
       - build-essential
       - libusb-1.0-0-dev
       - libudev-dev
+      - libpcap
+      - libpcap-dev
       - g++-4.8
    
 before_install:
