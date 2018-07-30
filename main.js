@@ -558,7 +558,6 @@ emitter.on('inTransfer', (server) => {
     }
     else {
       const request = identifyRequest(data);
-      console.log(request);
       switch (request) {
         case 'notIdentified':
           emitterMod.emit('error', `${request} packet type`);
