@@ -7,7 +7,7 @@ const LINUX_COMPOSITE_DEVICE_PID = 0x0104;
 
 // Include modules
 const usb = require('usb');
-const protocols = require('./src/protocols');
+const protocols = require('./lib/protocols');
 const EventEmitter = require('events').EventEmitter;
 const emitter = new EventEmitter();
 const fs = require('fs');
@@ -16,12 +16,12 @@ const network = require('network');
 const cap = require('cap').Cap;
 const os = require('os');
 const platform = os.platform();
-const rndis_win = require('./src/rndis_win');
+const rndis_init = require('./lib/rndis_init');
 const emitterMod = new EventEmitter(); // Emitter for module status
 const capture = new cap();
-const proxyUtils = require('./src/proxy-utils');
-const identifyRequest = require('./src/identifyRequest');
-const constants = require('./src/constants');
+const proxyUtils = require('./lib/proxy-utils');
+const identifyRequest = require('./lib/identifyRequest');
+const constants = require('./lib/constants');
 
 const proxyConfig = {
   Host: {},
@@ -180,7 +180,7 @@ const onOpen = (server) => {
     const RNDIS_INIT_SIZE = 24;
     const RNDIS_SET_SIZE = 28;
     const rndis_buf = Buffer.alloc(CONTROL_BUFFER_SIZE);
-    const init_msg = rndis_win.make_rndis_init();
+    const init_msg = rndis_init.make_rndis_init();
     init_msg.copy(rndis_buf, 0, 0, RNDIS_INIT_SIZE);
 
     // Windows Control Transfer
@@ -201,7 +201,7 @@ const onOpen = (server) => {
     });
 
 
-    const set_msg = rndis_win.make_rndis_set();
+    const set_msg = rndis_init.make_rndis_set();
     set_msg.copy(rndis_buf, 0, 0, RNDIS_SET_SIZE + 4);
 
     // Send rndis_set_msg (SEND_ENCAPSULATED_COMMAND)
