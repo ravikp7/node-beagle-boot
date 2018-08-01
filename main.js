@@ -100,10 +100,13 @@ exports.serveClient = (serverConfigs) => {
   });
 
   // Configure Proxy Server for Linux Composite Device
-  if (serverConfigs[0].vid === LINUX_COMPOSITE_DEVICE_VID && serverConfigs[0].pid === LINUX_COMPOSITE_DEVICE_PID) emitter.emit('configureProxy');
+  if (serverConfigs[0].vid === LINUX_COMPOSITE_DEVICE_VID && serverConfigs[0].pid === LINUX_COMPOSITE_DEVICE_PID) {
+    proxy.configure(proxyConfig, emitterMod, (proxyIp) => {
+      console.log(`Using Proxy IP Address: ${proxyIp}`);
+    });
+  }
   return emitterMod; // Event Emitter for progress
 };
-
 
 // Function for device initialization
 const transfer = (server) => {
@@ -117,30 +120,7 @@ const transfer = (server) => {
   }
 };
 
-// Configure Proxy Server
-emitter.on('configureProxy', () => {
-  // Proxy Server configs
-  network.get_active_interface((error, activeInterface) => {
-    if (!error) {
-      proxyConfig.Host = {
-        SourceMac: proxy.getAddressArray(activeInterface.mac_address),
-        SourceIp: proxy.getAddressArray(activeInterface.ip_address),
-        GatewayIp: proxy.getAddressArray(activeInterface.gateway_ip)
-      };
-      proxyConfig.BB = {
-        SourceIp: [192, 168, 6, 2],
-        GatewayIp: [192, 168, 6, 1],
-      };
-      proxyConfig.ActiveInterface = activeInterface;
-      proxy.getAvailableIp(activeInterface.ip_address).then((proxyIp) => {
-        proxyConfig.ProxyIp = proxy.getAddressArray(proxyIp);
-        console.log(`Using Proxy IP Address: ${proxyIp}`);
-      });
-    }
-  });
-});
-
-
+// Function after opeing device
 const onOpen = (server) => {
 
   // Initialize RNDIS device on Windows and OSX
@@ -155,7 +135,7 @@ const onOpen = (server) => {
 
     // Initialize the CDC ECM interface for Networking and expose Endpoints to interface
     server.deviceInterface.setAltSetting(1, (error) => {
-      if (error) console.log(error);
+      if (error) emitterMod.emit('error', `Can't initilaize CDC ECM for Networking: ${error}`);
       else {
         usbUtils.setupEndpoints(server, emitterMod); // Setup USB Interface endpoints
 
