@@ -22,6 +22,7 @@ const capture = new cap();
 const proxy = require('./lib/proxy');
 const identifyRequest = require('./lib/identifyRequest');
 const constants = require('./lib/constants');
+const usbUtils = require('./lib/usb-utils');
 
 const proxyConfig = {
   Host: {},
@@ -80,7 +81,7 @@ exports.serveClient = (serverConfigs) => {
     }
     emitterMod.emit('connect', foundDevice);
 
-    // Setup BOOTP/ARP/TFTP servers
+    // Setup servers
     serverConfigs.forEach((server) => {
       if (device === usb.findByIds(server.vid, server.pid) && foundDevice != constants.UMS) {
         server.device = device;
@@ -98,7 +99,7 @@ exports.serveClient = (serverConfigs) => {
     emitterMod.emit('disconnect', foundDevice);
   });
 
-  // Configure Proxy Server for Debian Device
+  // Configure Proxy Server for Linux Composite Device
   if (serverConfigs[0].vid === LINUX_COMPOSITE_DEVICE_VID && serverConfigs[0].pid === LINUX_COMPOSITE_DEVICE_PID) emitter.emit('configureProxy');
   return emitterMod; // Event Emitter for progress
 };
@@ -141,62 +142,24 @@ emitter.on('configureProxy', () => {
 
 
 const onOpen = (server) => {
-  try {
-    let interfaceNumber = 1; // Interface for data transfer
-
-    // Claim CDC interface to disable networking by Host for Device running Debian
-    if (server.foundDevice === constants.LINUX_COMPOSITE_DEVICE) {
-      [0, 1, 2, 3, 4, 5].forEach((i) => {
-        const devInt = server.device.interface(i);
-        if (platform != 'win32') {
-          if (devInt && devInt.isKernelDriverActive()) {
-            devInt.detachKernelDriver();
-          }
-        }
-        devInt.claim();
-      });
-      interfaceNumber = 3;
-    }
-
-    server.deviceInterface = server.device.interface(interfaceNumber); // Select interface 1 for BULK transfers
-    if (platform != 'win32') { // Not supported in Windows
-      // Detach Kernel Driver
-      if (server.deviceInterface && server.deviceInterface.isKernelDriverActive()) {
-        server.deviceInterface.detachKernelDriver();
-      }
-    }
-    server.deviceInterface.claim();
-  } catch (err) {
-    emitterMod.emit('error', `Can't claim interface ${err}`);
-    return;
-  }
-  updateProgress('Interface claimed');
 
   // Initialize RNDIS device on Windows and OSX
-  if (platform != 'linux' && server.foundDevice == constants.ROM) {
-    rndisInit(server);
+  if (platform != 'linux' && server.foundDevice === constants.ROM) {
+    rndisInit(server, emitterMod);
   }
+  usbUtils.claimInterface(server, emitterMod); // Claim USB interfaces
+  updateProgress('Interface claimed');
 
+  // For Proxy Server
   if (server.foundDevice === constants.LINUX_COMPOSITE_DEVICE) {
+
+    // Initialize the CDC ECM interface for Networking and expose Endpoints to interface
     server.deviceInterface.setAltSetting(1, (error) => {
       if (error) console.log(error);
       else {
-        try {
-          // Set endpoints for usb transfer
-          server.inEndpoint = server.deviceInterface.endpoint(server.deviceInterface.endpoints[0].address);
-          server.outEndpoint = server.deviceInterface.endpoint(server.deviceInterface.endpoints[1].address);
+        usbUtils.setupEndpoints(server, emitterMod); // Setup USB Interface endpoints
 
-          // Set endpoint transfer type
-          server.inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-          server.outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-        } catch (err) {
-          emitterMod.emit('error', `Interface disappeared: ${err}`);
-          return;
-        }
-
-        // Start polling the In Endpoint for transfers
-        server.inEndpoint.startPoll(1, constants.MAXBUF);
-
+        // Setup Network Capture
         const device = cap.findDevice(proxyConfig.ActiveInterface.ip_address);
         const filter = '';
         const bufSize = 10 * 1024 * 1024;
@@ -207,26 +170,12 @@ const onOpen = (server) => {
           proxy.processIn(server, capture, buffer, proxyConfig, emitter);
         });
         emitter.emit('inTransfer', server);
-
       }
     });
   }
+  // For Bootloader Server
   else {
-    try {
-      // Set endpoints for usb transfer
-      server.inEndpoint = server.deviceInterface.endpoint(server.deviceInterface.endpoints[0].address);
-      server.outEndpoint = server.deviceInterface.endpoint(server.deviceInterface.endpoints[1].address);
-
-      // Set endpoint transfer type
-      server.inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-      server.outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-    } catch (err) {
-      emitterMod.emit('error', `Interface disappeared: ${err}`);
-      return;
-    }
-
-    // Start polling the In Endpoint for transfers
-    server.inEndpoint.startPoll(1, constants.MAXBUF);
+    usbUtils.setupEndpoints(server, emitterMod); // Setup USB Interface endpoints
     emitter.emit('inTransfer', server);
   }
 };
