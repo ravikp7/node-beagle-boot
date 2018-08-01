@@ -35,12 +35,12 @@ const progress = {
 // TFTP serverConfig for USB Mass Storage, binaries must be placed in 'bin/'
 exports.usbMassStorage = () => {
   return exports.serveClient([{
-    vid: ROM_VID,
-    pid: ROM_PID,
+    vid: constants.ROM_VID,
+    pid: constants.ROM_PID,
     bootpFile: 'u-boot-spl.bin'
   }, {
-    vid: SPL_VID,
-    pid: SPL_PID,
+    vid: constants.SPL_VID,
+    pid: constants.SPL_PID,
     bootpFile: 'u-boot.img'
   }]);
 };
@@ -48,8 +48,8 @@ exports.usbMassStorage = () => {
 // Proxy Server for Linux Composite Device
 exports.proxyServer = () => {
   return exports.serveClient([{
-    vid: LINUX_COMPOSITE_DEVICE_VID,
-    pid: LINUX_COMPOSITE_DEVICE_PID
+    vid: constants.LINUX_COMPOSITE_DEVICE_VID,
+    pid: constants.LINUX_COMPOSITE_DEVICE_PID
   }]);
 };
 
@@ -67,7 +67,7 @@ exports.serveClient = (serverConfigs) => {
   });
 
   // Configure Proxy Server for Linux Composite Device
-  if (serverConfigs[0].vid === LINUX_COMPOSITE_DEVICE_VID && serverConfigs[0].pid === LINUX_COMPOSITE_DEVICE_PID) {
+  if (serverConfigs[0].vid === constants.LINUX_COMPOSITE_DEVICE_VID && serverConfigs[0].pid === constants.LINUX_COMPOSITE_DEVICE_PID) {
     proxy.configure(proxyConfig, emitterMod, (proxyIp) => {
       console.log(`Using Proxy IP Address: ${proxyIp}`);
     });
