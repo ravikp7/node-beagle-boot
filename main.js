@@ -15,6 +15,7 @@ const identifyRequest = require('./lib/identifyRequest');
 const constants = require('./lib/constants');
 const usbUtils = require('./lib/usb-utils');
 const server = require('./lib/server');
+const serial = require('./lib/usb_serial');
 
 const proxyConfig = {
   Host: {},
@@ -99,6 +100,7 @@ const onOpen = (serverConfig) => {
 
   // For Proxy Server
   if (serverConfig.foundDevice === constants.LINUX_COMPOSITE_DEVICE) {
+    serial.configureNet(serverConfig, proxyConfig);  // Configure Network over USB serial
 
     // Initialize the CDC ECM interface for Networking and expose Endpoints to interface
     serverConfig.deviceInterface.setAltSetting(1, (error) => {
