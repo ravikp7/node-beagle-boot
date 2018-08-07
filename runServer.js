@@ -1,13 +1,14 @@
 var BB = require('./main');
+const EOL = require('os').EOL;
 
 console.log(`Choose Option: \n1. Bootloader Server \n2. TCP/IP Proxy Server`);
 process.stdin.on('data', (data) => {
   const result = data.toString();
-  if (result === '1\n') {
+  if (result === `1${EOL}`) {
     bootloaderServer();
     process.stdin.removeAllListeners();
   }
-  else if (result === '2\n') {
+  else if (result === `2${EOL}`) {
     proxyServer();
     process.stdin.removeAllListeners();
   }
