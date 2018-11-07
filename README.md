@@ -51,6 +51,42 @@ npm start
 
 It should now boot BB into USB Mass Storage Mode.
 
+___
+## U-boot binary build instructions:
+* Use your preferred Cross Compiler or set up one from [instructions here](http://eewiki.net/display/linuxonarm/BeagleBone+Black#BeagleBoneBlack-ARMCrossCompiler:GCC)
+
+* Get the latest U-boot sources and checkout v2018.03-rc4
+```
+git clone https://github.com/u-boot/u-boot.git
+cd u-boot
+git checkout v2018.07 -b tmp
+```
+* Apply default UMS(USB Mass Storage) Patch
+
+It changes default bootcommand for usb mass storage and changes spl usb RNDIS config to 1 for Windows and OSX compatibility
+```
+wget https://raw.githubusercontent.com/ravikp7/node-beagle-boot/tcpip/ums-patch.diff
+git apply ums-patch.diff
+```
+* Run the following command for config:
+```
+make ARCH=arm CROSS_COMPILE=${CC} am335x_evm_usbspl_defconfig
+```
+* To enable USB Mass Storage, run command
+```
+make menuconfig
+```
+Select `Command Line Interface` -> `Device Access Commands` -> `UMS usb mass storage`
+
+Then 'Save' and 'Exit'
+
+* Run the following command to compile:
+```
+make ARCH=arm CROSS_COMPILE=${CC}
+```
+Now SPL binary is `spl/u-boot-spl.bin` and uboot binary is `u-boot.img`
+
+___
 ## API Documentation
 ___
 #### For USB Mass Storage

@@ -1,0 +1,28 @@
+diff --git a/configs/am335x_evm_usbspl_defconfig b/configs/am335x_evm_usbspl_defconfig
+index 88003b5852..d2765dcb46 100644
+--- a/configs/am335x_evm_usbspl_defconfig
++++ b/configs/am335x_evm_usbspl_defconfig
+@@ -5,7 +5,7 @@ CONFIG_AM33XX=y
+ CONFIG_SPL=y
+ CONFIG_DISTRO_DEFAULTS=y
+ # CONFIG_ANDROID_BOOT_IMAGE is not set
+-CONFIG_BOOTCOMMAND="if test ${boot_fit} -eq 1; then run update_to_fit; fi; run findfdt; run init_console; run envboot; run distro_bootcmd"
++CONFIG_BOOTCOMMAND="ums 0 mmc 1; ums 0 mmc 0;"
+ CONFIG_CONSOLE_MUX=y
+ CONFIG_SYS_CONSOLE_ENV_OVERWRITE=y
+ CONFIG_SYS_CONSOLE_INFO_QUIET=y
+diff --git a/drivers/usb/gadget/ether.c b/drivers/usb/gadget/ether.c
+index 8ab9b9fe56..ac19a2d5ca 100644
+--- a/drivers/usb/gadget/ether.c
++++ b/drivers/usb/gadget/ether.c
+@@ -333,8 +333,8 @@ static char host_addr[18];
+  * to recharge batteries ...
+  */
+ 
+-#define DEV_CONFIG_VALUE	1	/* cdc or subset */
+-#define DEV_RNDIS_CONFIG_VALUE	2	/* rndis; optional */
++#define DEV_CONFIG_VALUE	2	/* cdc or subset */
++#define DEV_RNDIS_CONFIG_VALUE	1	/* rndis; optional */
+ 
+ static struct usb_device_descriptor
+ device_desc = {

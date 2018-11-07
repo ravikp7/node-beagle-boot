@@ -1,384 +1,312 @@
-const ROMVID = 0x0451;
-const ROMPID = 0x6141;
-const BOOTPS = 67;
-const BOOTPC = 68;
-const IPUDP = 17;
-const SPLVID = 0x0525;
-const SPLPID = 0xA4A2;
-const ETHIPP = 0x0800;
-const ETHARPP = 0x0806;
-const MAXBUF = 450;
-const server_hwaddr = [0x9a, 0x1f, 0x85, 0x1c, 0x3d, 0x0e];
-const server_ip = [0xc0, 0xa8, 0x01, 0x09];     // 192.168.1.9
-const BB_ip = [0xc0, 0xa8, 0x01, 0x03];         // 192.168.1.3
-const servername = [66, 69, 65, 71, 76, 69, 66, 79, 79, 84];       // ASCII ['B','E','A','G','L','E','B','O','O','T']
-const UMSVID = 0x0451;
-const UMSPID = 0xd022;
-const UBOOTVID = 0x0525;
-const UBOOTPID = 0xa4a5;
-
-// Size of all packets
-const rndisSize = 44;
-const etherSize = 14;
-const arp_Size = 28;
-const ipSize = 20;
-const udpSize = 8;
-const bootpSize = 300;
-const tftpSize = 4;
-const fullSize = 386;
-
-
-// Include modules
 const usb = require('usb');
-const protocols = require('./src/protocols');
+const protocols = require('./lib/protocols');
 const EventEmitter = require('events').EventEmitter;
 const emitter = new EventEmitter();
 const fs = require('fs');
 const path = require('path');
+const cap = require('cap').Cap;
 const os = require('os');
 const platform = os.platform();
-const rndis_win = require('./src/rndis_win');
-var inEndpoint, outEndpoint, Data, ether, rndis, eth2, ip, udp, bootreply, increment, udpTFTP;
-const emitterMod = new EventEmitter();    // Emitter for module status
-var percent;    // Percentage for progress
-var description;    // Description for current status
+const rndisInit = require('./lib/rndis_init');
+const emitterMod = new EventEmitter(); // Emitter for module status
+const capture = new cap();
+const proxy = require('./lib/proxy');
+const identifyRequest = require('./lib/identifyRequest');
+const constants = require('./lib/constants');
+const usbUtils = require('./lib/usb-utils');
+const server = require('./lib/server');
+const serial = require('./lib/usb_serial');
+
+const proxyConfig = {
+  Host: {},
+  BB: {},
+  ProxyIp: [],
+  ArpList: {},
+  ActiveInterface: {}
+};
+
+const progress = {
+  percent: 0, // Percentage for progress
+  increment: 5
+};
 
 // Set usb debug log
 //usb.setDebugLevel(4);   
 
-// TFTP server for USB Mass Storage
-exports.usbMassStorage = function(){
-    return exports.tftpServer([
-        {vid: ROMVID, pid: ROMPID, file_path: path.join(__dirname, 'bin', 'spl')},
-        {vid: SPLVID, pid: SPLPID, file_path: path.join(__dirname, 'bin', 'uboot')}
-    ]);
+// TFTP serverConfig for USB Mass Storage, binaries must be placed in 'bin/'
+exports.usbMassStorage = () => {
+  return exports.serveClient([{
+    vid: constants.ROM_VID,
+    pid: constants.ROM_PID,
+    bootpFile: 'u-boot-spl.bin'
+  }, {
+    vid: constants.SPL_VID,
+    pid: constants.SPL_PID,
+    bootpFile: 'u-boot.img'
+  }]);
 };
 
-
-// TFTP server for any file transfer
-exports.tftpServer = function(transferFiles){
-
-    var foundDevice;
-    increment = (100 / (transferFiles.length * 9));
-    usb.on('attach', function(device){
-
-        switch(device){
-            case usb.findByIds(ROMVID, ROMPID): foundDevice = 'ROM';
-            break;
-
-            case usb.findByIds(SPLVID, SPLPID): foundDevice = 'SPL';
-            break;
-
-            case usb.findByIds(UBOOTVID, UBOOTPID): foundDevice = 'UBOOT';
-            break;
-
-            case usb.findByIds(UMSVID, UMSPID): foundDevice = 'UMS';
-            break;
-
-            default: foundDevice = 'Device '+device.deviceDescriptor;
-        }
-
-        emitterMod.emit('connect', foundDevice);
-
-        // Transfer files
-        transferFiles.forEach(function(entry){
-
-            if(device === usb.findByIds(entry.vid, entry.pid)){ 
-                var timeout = (foundDevice == 'ROM')? 0: 500;
-                setTimeout(()=>{transfer(entry.file_path, device, foundDevice);}, timeout);
-            }   
-        });
-    });
-
-    usb.on('detach', function(device){
-
-        emitterMod.emit('disconnect', foundDevice);
-    });
-
-    return emitterMod;  // Event Emitter for progress
+// Proxy Server for Linux Composite Device
+exports.proxyServer = () => {
+  return exports.serveClient([{
+    vid: constants.LINUX_COMPOSITE_DEVICE_VID,
+    pid: constants.LINUX_COMPOSITE_DEVICE_PID
+  }]);
 };
 
+// Configuring Server to serve Client
+exports.serveClient = (serverConfigs) => {
+  let foundDevice;
+  progress.increment = (100 / (serverConfigs.length * 10));
+  usb.on('attach', (device) => {
+    foundDevice = server.setup(device, serverConfigs, emitterMod, runServer);
+  });
 
-// Function for device initialization
-function transfer(filePath, device, foundDevice){
-    if(foundDevice == 'ROM') percent = increment;
-    i = 1;          // Keeps count of File Blocks transferred
-    blocks = 2;     // Number of blocks of file, assigned greater than i here
-    description = path.basename(filePath)+" =>";
-    emitterMod.emit('progress', {description: description, complete: +percent.toFixed(2)});
-    percent += increment;
+  // USB detach
+  usb.on('detach', () => {
+    emitterMod.emit('disconnect', foundDevice);
+  });
 
-    if(foundDevice == 'SPL' && platform != 'linux'){
-        device.open(false);
-        device.setConfiguration(2, function(err){if(err) emitterMod.emit('error', "Can't set configuration " +err);});
-        device.__open();
-        device.__claimInterface(0);
-    }
+  // Configure Proxy Server for Linux Composite Device
+  if (serverConfigs[0].vid === constants.LINUX_COMPOSITE_DEVICE_VID && serverConfigs[0].pid === constants.LINUX_COMPOSITE_DEVICE_PID) {
+    proxy.configure(proxyConfig, emitterMod, (proxyIp) => {
+      console.log(`Using Proxy IP Address: ${proxyIp}`);
+    });
+  }
+  return emitterMod; // Event Emitter for progress
+};
 
-    device.open();
-    var interface = device.interface(1);    // Select interface 1 for BULK transfers
+// Function for opening device
+const runServer = (serverConfig) => {
+  if (serverConfig.foundDevice == constants.ROM) progress.percent = progress.increment;
+  updateProgress(`${serverConfig.foundDevice} ->`);
+  try {
+    serverConfig.device.open();
+    onOpen(serverConfig);
+  } catch (ex) {
+    emitterMod.emit('error', `Can't open device ${ex}`);
+  }
+};
 
-    windows = 0;
-    if(platform == 'win32') windows = 1; 
+// Function after opeing device
+const onOpen = (serverConfig) => {
 
-    if(!windows){                // Not supported in Windows
-        // Detach Kernel Driver
-        if(interface.isKernelDriverActive()){
-            interface.detachKernelDriver();
-        }
-    }
+  // Initialize RNDIS device on Windows and OSX
+  if (platform != 'linux' && serverConfig.foundDevice === constants.ROM) {
+    rndisInit(serverConfig, emitterMod);
+  }
+  usbUtils.claimInterface(serverConfig, emitterMod); // Claim USB interfaces
+  updateProgress('Interface claimed');
 
-    try{
-        interface.claim();
-    }
+  // For Proxy Server
+  if (serverConfig.foundDevice === constants.LINUX_COMPOSITE_DEVICE) {
+    serial.configureNet(serverConfig, proxyConfig);  // Configure Network over USB serial
 
-    catch(err){
-        emitterMod.emit('error', "Can't claim interface " +err);
-    }
+    // Initialize the CDC ECM interface for Networking and expose Endpoints to interface
+    serverConfig.deviceInterface.setAltSetting(1, (error) => {
+      if (error) emitterMod.emit('error', `Can't initilaize CDC ECM for Networking: ${error}`);
+      else {
+        usbUtils.setupEndpoints(serverConfig, emitterMod); // Setup USB Interface endpoints
 
-    description = "Interface claimed";
-    emitterMod.emit('progress', {description: description, complete: +percent.toFixed(2)});
-    percent += increment;
+        // Setup Network Capture
+        const captureDevice = cap.findDevice(proxyConfig.ActiveInterface.ip_address);
+        const filter = '';
+        const bufSize = 10 * 1024 * 1024;
+        let buffer = Buffer.alloc(65535);
+        capture.open(captureDevice, filter, bufSize, buffer);
 
-    // Code to initialize RNDIS device on Windows and OSX
-    if(platform != 'linux' && foundDevice == 'ROM'){
-        var intf0 = device.interface(0);    // Select interface 0 for CONTROL transfer
-        intf0.claim();
-
-        var CONTROL_BUFFER_SIZE = 1025;  
-        var rndis_init_size = 24;
-        var rndis_set_size = 28;
-
-        var rndis_buf = Buffer.alloc(CONTROL_BUFFER_SIZE);
-        var init_msg = rndis_win.make_rndis_init();
-        init_msg.copy(rndis_buf, 0, 0, rndis_init_size);
-
-
-        // Windows Control Transfer
-        // https://msdn.microsoft.com/en-us/library/aa447434.aspx
-        // http://www.beyondlogic.org/usbnutshell/usb6.shtml
-
-        var bmRequestType_send = 0x21; // USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
-        var bmRequestType_receive = 0xA1; // USB_DATA=DeviceToHost | USB_TYPE=CLASS | USB_RECIPIENT=INTERFACE
-
-        // Sending rndis_init_msg (SEND_ENCAPSULATED_COMMAND)
-        device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
-            // This error doesn't affect the functionality, so ignoring
-            //if(error) emitterMod.emit('error', "Control transfer error on SEND_ENCAPSULATED " +error);
+        capture.on('packet', () => {
+          proxy.processIn(serverConfig, capture, buffer, proxyConfig, emitter);
         });
-
-        // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
-        device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
-            if(error) emitterMod.emit('error', "Control transfer error on GET_ENCAPSULATED " +error);
-        });
-
-
-        var set_msg = rndis_win.make_rndis_set();
-        set_msg.copy(rndis_buf, 0, 0, rndis_set_size+4);
-
-        // Send rndis_set_msg (SEND_ENCAPSULATED_COMMAND)
-        device.controlTransfer(bmRequestType_send, 0, 0, 0, rndis_buf, function(error, data){
-            // This error doesn't affect the functionality, so ignoring
-            //if(error) emitterMod.emit('error', "Control transfer error on SEND_ENCAPSULATED " +error);
-        });
-
-        // Receive rndis_init_cmplt (GET_ENCAPSULATED_RESPONSE)
-        device.controlTransfer(bmRequestType_receive, 0x01, 0, 0, CONTROL_BUFFER_SIZE, function(error, data){
-            if(error) emitterMod.emit('error', "Control transfer error on GET_ENCAPSULATED " +error);
-        });
-
-    }                      
-
-    // Set endpoints for usb transfer
-    inEndpoint = interface.endpoint(interface.endpoints[0].address);
-    outEndpoint = interface.endpoint(interface.endpoints[1].address);
-
-    // Set endpoint transfer type
-    inEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-    outEndpoint.transferType = usb.LIBUSB_TRANSFER_TYPE_BULK;
-
-    emitter.emit('inTransfer', filePath);
-}
-
-
+        emitter.emit('inTransfer', serverConfig);
+      }
+    });
+  }
+  // For Bootloader Server
+  else {
+    usbUtils.setupEndpoints(serverConfig, emitterMod); // Setup USB Interface endpoints
+    emitter.emit('inTransfer', serverConfig);
+  }
+};
 
 // Event for inEnd transfer
-emitter.on('inTransfer', function(filePath){
+emitter.on('inTransfer', (serverConfig) => {
+  serverConfig.inEndpoint.on('data', (data) => {
 
-    inEndpoint.transfer(MAXBUF, function(error, data){
-        
-        if(!error){           
-            var request = identifyRequest(data, path.basename(filePath).length);
-            
-            if(request == 'notIdentified') emitter.emit('inTransfer', filePath);
-
-            else {
-
-                if(request == 'BOOTP') Data = processBOOTP(filePath, data);
-
-                if(request == 'ARP') Data = processARP(data);
-
-                if(request == 'TFTP_Data') Data = processTFTP_Data();
-                else{    
-                    emitterMod.emit('progress', {description: request + " request received", complete: +percent.toFixed(2)});
-                    percent += increment;
-                }
-
-                if(request == 'TFTP') {
-                    emitterMod.emit('progress', {description: path.basename(filePath)+" transfer starts", complete: +percent.toFixed(2)});
-                    percent += increment;
-
-                    emitter.emit('processTFTP', data, filePath);
-                }
-
-                else if(i <= blocks+1){     // Transfer until all blocks of file are transferred
-                        emitter.emit('outTransfer', filePath, Data, request);
-                    }
-                    else{
-                        emitterMod.emit('progress', {description: path.basename(filePath)+" transfer complete", complete: +percent.toFixed(2)});
-                        if(+percent.toFixed(2) == 100) emitterMod.emit('done');     // Emitted on completion
-                        percent += increment;
-                    }
-            }
-        }
-
-        else {
-            emitterMod.emit('error', "ERROR in inTransfer");
-        }
-    });
+    if (serverConfig.foundDevice === constants.LINUX_COMPOSITE_DEVICE) {
+      proxy.processOut(serverConfig, capture, data, proxyConfig);
+    }
+    else {
+      const request = identifyRequest(serverConfig, data);
+      switch (request) {
+        case 'unidentified':
+          emitterMod.emit('error', `${request} packet type`);
+          break;
+        case 'TFTP':
+          updateProgress('TFTP request recieved');
+          emitter.emit('processTFTP', serverConfig, data);
+          break;
+        case 'BOOTP':
+          updateProgress('BOOTP request recieved');
+          emitter.emit('outTransfer', serverConfig, processBOOTP(serverConfig, data), request);
+          break;
+        case 'ARP':
+          emitter.emit('outTransfer', serverConfig, processARP(serverConfig, data), request);
+          break;
+        case 'TFTP_Data':
+          if (serverConfig.tftp.i <= serverConfig.tftp.blocks) { // Transfer until all blocks of file are transferred
+            emitter.emit('outTransfer', serverConfig, processTFTP_Data(serverConfig), request);
+          } else {
+            updateProgress(`${serverConfig.foundDevice} TFTP transfer complete`);
+            serverConfig.inEndpoint.stopPoll();
+          }
+          break;
+        case 'NC':
+          emitter.emit('nc', serverConfig, data);
+          break;
+        default:
+          console.log(request);
+      }
+    }
+  });
+  serverConfig.inEndpoint.on('error', (error) => {
+    console.log(error);
+  });
 });
 
 
 // Event for outEnd Transfer
-emitter.on('outTransfer', function(filePath, data, request){
-
-    outEndpoint.transfer(data, function(error){
-        
-        if(!error){
-            if(request == 'BOOTP' || request == 'ARP'){
-                emitterMod.emit('progress', {description: request + " reply done", complete: +percent.toFixed(2)});
-                percent += increment;
-            }
-
-            emitter.emit('inTransfer', filePath);
-        }
-        else {
-            emitterMod.emit('error', "ERROR sending " + request);
-        }  
-    });
-    
+emitter.on('outTransfer', (serverConfig, data, request) => {
+  serverConfig.outEndpoint.transfer(data, (error) => {
+    if (!error) {
+      if (request == 'BOOTP') updateProgress(`${request} reply done`);
+    }
+  });
 });
 
-
-// Function to identify request packet
-function identifyRequest(buff, len){
-    var val = buff[4];
-
-    if(val == 0xc2 || val == 0x6c) return 'BOOTP';
-
-    if(val == 0x56) return 'ARP';
-
-    if(val == (0x5f + len) || val == (0x76 + len)) return 'TFTP';
-
-    if(val == 0x5a) return 'TFTP_Data';
-    
-    return 'notIdentified';
-
-}
-
 // Function to process BOOTP request
-function processBOOTP(filePath, data){
-
-    var ether_buf = Buffer.alloc(MAXBUF-rndisSize); 
-
-    var udp_buf = Buffer.alloc(udpSize);
-                
-    var bootp_buf = Buffer.alloc(bootpSize);
-
-    data.copy(udp_buf, 0, rndisSize + etherSize + ipSize, MAXBUF);
-
-    data.copy(bootp_buf, 0, rndisSize + etherSize + ipSize + udpSize, MAXBUF);
-        
-    data.copy(ether_buf, 0, rndisSize, MAXBUF);
-
-    ether = protocols.decode_ether(ether_buf);      // Gets decoded ether packet data
-
-    var udpUboot = protocols.parse_udp(udp_buf);       // parsed udp header
-
-    var bootp = protocols.parse_bootp(bootp_buf);   // parsed bootp header
-
-    rndis = protocols.make_rndis(fullSize - rndisSize);
-
-    eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
-
-    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + bootpSize, 0);
-
-    udp = protocols.make_udp(bootpSize, udpUboot.udpDest, udpUboot.udpSrc);
-
-    bootreply = protocols.make_bootp(servername, path.basename(filePath), bootp.xid, ether.h_source, BB_ip, server_ip);
-
-    buff = Buffer.concat([rndis, eth2, ip, udp, bootreply], fullSize);
-    
-    return buff;
-}
+const processBOOTP = (serverConfig, data) => {
+  const ether_buf = Buffer.alloc(constants.MAXBUF - constants.RNDIS_SIZE);
+  const udp_buf = Buffer.alloc(constants.UDP_SIZE);
+  const bootp_buf = Buffer.alloc(constants.BOOTP_SIZE);
+  data.copy(udp_buf, 0, constants.RNDIS_SIZE + constants.ETHER_SIZE + constants.IPV4_SIZE, constants.MAXBUF);
+  data.copy(bootp_buf, 0, constants.RNDIS_SIZE + constants.ETHER_SIZE + constants.IPV4_SIZE + constants.UDP_SIZE, constants.MAXBUF);
+  data.copy(ether_buf, 0, constants.RNDIS_SIZE, constants.MAXBUF);
+  serverConfig.ether = protocols.decode_ether(ether_buf); // Gets decoded ether packet data
+  const udpUboot = protocols.parse_udp(udp_buf); // parsed udp header
+  const bootp = protocols.parse_bootp(bootp_buf); // parsed bootp header
+  const rndis = protocols.make_rndis(constants.FULL_SIZE - constants.RNDIS_SIZE);
+  const eth2 = protocols.make_ether2(serverConfig.ether.h_source, serverConfig.ether.h_dest, constants.ETH_TYPE_IPV4);
+  const ip = protocols.make_ipv4(constants.SERVER_IP, constants.BB_IP, constants.IP_UDP, 0, constants.IPV4_SIZE + constants.UDP_SIZE + constants.BOOTP_SIZE, 0);
+  const udp = protocols.make_udp(constants.BOOTP_SIZE, udpUboot.udpDest, udpUboot.udpSrc);
+  const bootreply = protocols.make_bootp(constants.SERVER_NAME, serverConfig.bootpFile, bootp.xid, serverConfig.ether.h_source, constants.BB_IP, constants.SERVER_IP);
+  return Buffer.concat([rndis, eth2, ip, udp, bootreply], constants.FULL_SIZE);
+};
 
 // Function to process ARP request
-function processARP(data){
+const processARP = (serverConfig, data) => {
+  const arp_buf = Buffer.alloc(constants.ARP_SIZE);
+  data.copy(arp_buf, 0, constants.RNDIS_SIZE + constants.ETHER_SIZE, constants.RNDIS_SIZE + constants.ETHER_SIZE + constants.ARP_SIZE);
+  serverConfig.receivedARP = protocols.parse_arp(arp_buf); // Parsed received ARP request
+  const arpResponse = protocols.make_arp(2, serverConfig.ether.h_dest, serverConfig.receivedARP.ip_dest, serverConfig.receivedARP.hw_source, serverConfig.receivedARP.ip_source);
+  const rndis = protocols.make_rndis(constants.ETHER_SIZE + constants.ARP_SIZE);
+  const eth2 = protocols.make_ether2(serverConfig.ether.h_source, serverConfig.ether.h_dest, constants.ETH_TYPE_ARP);
+  return Buffer.concat([rndis, eth2, arpResponse], constants.RNDIS_SIZE + constants.ETHER_SIZE + constants.ARP_SIZE);
+};
 
-    var arp_buf = Buffer.alloc(arp_Size);
+// Event to process TFTP request
+emitter.on('processTFTP', (serverConfig, data) => {
+  const udpTFTP_buf = Buffer.alloc(constants.UDP_SIZE);
+  data.copy(udpTFTP_buf, 0, constants.RNDIS_SIZE + constants.ETHER_SIZE + constants.IPV4_SIZE, constants.RNDIS_SIZE + constants.ETHER_SIZE + constants.IPV4_SIZE + constants.UDP_SIZE);
+  serverConfig.tftp = {}; // Object containing TFTP parameters
+  serverConfig.tftp.i = 1; // Keeps count of File Blocks transferred
+  serverConfig.tftp.receivedUdp = protocols.parse_udp(udpTFTP_buf); // Received UDP packet for SPL tftp
+  serverConfig.tftp.eth2 = protocols.make_ether2(serverConfig.ether.h_source, serverConfig.ether.h_dest, constants.ETH_TYPE_IPV4); // Making ether header here, as it remains same for all tftp block transfers
+  const fileName = extractName(data);
+  serverConfig.filePath = path.join('bin', fileName);
+  updateProgress(`${fileName} transfer starts`);
+  fs.readFile(serverConfig.filePath, (error, file_data) => {
+    if (!error) {
+      serverConfig.tftp.blocks = Math.ceil((file_data.length + 1) / 512); // Total number of blocks of file
+      serverConfig.tftp.start = 0;
+      serverConfig.tftp.fileData = file_data;
+      emitter.emit('outTransfer', serverConfig, processTFTP_Data(serverConfig), 'TFTP');
+    } else {
+      emitter.emit('outTransfer', serverConfig, processTFTP_Error(serverConfig), 'TFTP');
+      emitterMod.emit('error', `Error reading ${serverConfig.filePath}: ${error}`);
+    }
+  });
+});
 
-    data.copy(arp_buf, 0, rndisSize + etherSize, rndisSize + etherSize + arp_Size);
-        
-    receivedARP = protocols.parse_arp(arp_buf);         // Parsed received ARP request
+// Event for netconsole in
+emitter.on('nc', (serverConfig, data) => {
+  const nc_buf = Buffer.alloc(constants.MAXBUF);
+  data.copy(nc_buf, 0, constants.RNDIS_SIZE + constants.ETHER_SIZE + constants.IPV4_SIZE + constants.UDP_SIZE, constants.MAXBUF);
+  process.stdout.write(nc_buf.toString());
+  if (!serverConfig.isNcActive) {
+    serverConfig.isNcActive = true;
+    emitterMod.emit('ncStarted', serverConfig);
+  }
+});
 
-    // ARP response
-    var arpResponse = protocols.make_arp(2, server_hwaddr, receivedARP.ip_dest, receivedARP.hw_source, receivedARP.ip_source );
-
-    rndis = protocols.make_rndis(etherSize + arp_Size);
-
-    eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHARPP);
-
-    buff = Buffer.concat([rndis, eth2, arpResponse], rndisSize + etherSize + arp_Size);
-
-    return buff;
-}
-
-// Function to process TFTP request
-emitter.on('processTFTP', function(data, filePath){
-
-    var udpTFTP_buf = Buffer.alloc(udpSize);
-
-    data.copy(udpTFTP_buf, 0, rndisSize + etherSize + ipSize, rndisSize + etherSize + ipSize + udpSize);
-            
-    udpTFTP = protocols.parse_udp(udpTFTP_buf);           // Received UDP packet for SPL tftp
-
-    fs.readFile(filePath, function(error, file_data){
-        if(!error){
-            fileData = file_data;
-            blocks = Math.ceil(fileData.length/512);         // Total number of blocks of file
-            eth2 = protocols.make_ether2(ether.h_source, server_hwaddr, ETHIPP);
-            start = 0;
-            emitter.emit('outTransfer', filePath, processTFTP_Data(), undefined);
-        }
-        
-        else emitterMod.emit('error', "Error reading "+path.basename(filePath)+" : "+error);
-    });
-
+// Event for sending netconsole commands
+emitterMod.on('ncin', (serverConfig, command) => {
+  const data = Buffer.from(command);
+  const blockSize = data.length;
+  const ncStdinData = Buffer.alloc(blockSize);
+  data.copy(ncStdinData, 0, 0, blockSize);
+  const rndis = protocols.make_rndis(constants.ETHER_SIZE + constants.IPV4_SIZE + constants.UDP_SIZE + blockSize);
+  const eth2 = protocols.make_ether2(serverConfig.ether.h_source, serverConfig.ether.h_dest, constants.ETH_TYPE_IPV4);
+  const ip = protocols.make_ipv4(serverConfig.receivedARP.ip_dest, serverConfig.receivedARP.ip_source, constants.IP_UDP, 0, constants.IPV4_SIZE + constants.UDP_SIZE + blockSize, 0);
+  const udp = protocols.make_udp(blockSize, constants.NETCONSOLE_UDP_PORT, constants.NETCONSOLE_UDP_PORT);
+  const packet = Buffer.concat([rndis, eth2, ip, udp, data]);
+  emitter.emit('outTransfer', serverConfig, packet, 'NC');
 });
 
 // Function to process File data for TFTP
-function processTFTP_Data(){
+const processTFTP_Data = (serverConfig) => {
+  let blockSize = serverConfig.tftp.fileData.length - serverConfig.tftp.start;
+  if (blockSize > 512) blockSize = 512;
+  const blockData = Buffer.alloc(blockSize);
+  serverConfig.tftp.fileData.copy(blockData, 0, serverConfig.tftp.start, serverConfig.tftp.start + blockSize); // Copying data to block
+  serverConfig.tftp.start += blockSize; // Keep counts of bytes transferred upto
+  const rndis = protocols.make_rndis(constants.ETHER_SIZE + constants.IPV4_SIZE + constants.UDP_SIZE + constants.TFTP_SIZE + blockSize);
+  const ip = protocols.make_ipv4(serverConfig.receivedARP.ip_dest, serverConfig.receivedARP.ip_source, constants.IP_UDP, 0, constants.IPV4_SIZE + constants.UDP_SIZE + constants.TFTP_SIZE + blockSize, 0);
+  const udp = protocols.make_udp(constants.TFTP_SIZE + blockSize, serverConfig.tftp.receivedUdp.udpDest, serverConfig.tftp.receivedUdp.udpSrc);
+  const tftp = protocols.make_tftp(3, serverConfig.tftp.i);
+  serverConfig.tftp.i++;
+  return Buffer.concat([rndis, serverConfig.tftp.eth2, ip, udp, tftp, blockData], constants.RNDIS_SIZE + constants.ETHER_SIZE + constants.IPV4_SIZE + constants.UDP_SIZE + constants.TFTP_SIZE + blockSize);
+};
 
-    var blk_size = (i==blocks)? fileData.length - (blocks-1)*512 : 512;  // Different block size for last block
+// Function to handle TFTP error
+const processTFTP_Error = (serverConfig) => {
+  const error_msg = 'File not found';
+  const rndis = protocols.make_rndis(constants.ETHER_SIZE + constants.IPV4_SIZE + constants.UDP_SIZE + constants.TFTP_SIZE + error_msg.length + 1);
+  const ip = protocols.make_ipv4(serverConfig.receivedARP.ip_dest, serverConfig.receivedARP.ip_source, constants.IP_UDP, 0, constants.IPV4_SIZE + constants.UDP_SIZE + constants.TFTP_SIZE + error_msg.length + 1, 0);
+  const udp = protocols.make_udp(constants.TFTP_SIZE + error_msg.length + 1, serverConfig.tftp.receivedUdp.udpDest, serverConfig.tftp.receivedUdp.udpSrc);
+  const tftp = protocols.make_tftp(5, 1, error_msg);
+  return Buffer.concat([rndis, serverConfig.tftp.eth2, ip, udp, tftp], constants.RNDIS_SIZE + constants.ETHER_SIZE + constants.IPV4_SIZE + constants.UDP_SIZE + constants.TFTP_SIZE + error_msg.length + 1);
+};
 
-    var blk_data = Buffer.alloc(blk_size);
-    fileData.copy(blk_data, 0, start, start + blk_size);                 // Copying data to block
-    start += blk_size; 
+// Function for progress update
+const updateProgress = (description) => {
+  emitterMod.emit('progress', {
+    description: description,
+    complete: +progress.percent.toFixed(2)
+  });
+  if (progress.percent <= 100) {
+    progress.percent += progress.increment;
+  }
+};
 
-    rndis = protocols.make_rndis(etherSize + ipSize + udpSize + tftpSize + blk_size);
-    ip = protocols.make_ipv4(server_ip, BB_ip, IPUDP, 0, ipSize + udpSize + tftpSize + blk_size, 0);
-    udp = protocols.make_udp(tftpSize + blk_size, udpTFTP.udpDest, udpTFTP.udpSrc);
-    tftp = protocols.make_tftp(3, i);
-    i++;
-    return Buffer.concat([rndis, eth2, ip, udp, tftp, blk_data], rndisSize + etherSize + ipSize + udpSize + tftpSize + blk_size);
-}
+// Function to extract FileName from TFTP packet
+const extractName = (data) => {
+  const fv = constants.RNDIS_SIZE + constants.ETHER_SIZE + constants.IPV4_SIZE + constants.UDP_SIZE + 2;
+  let nameCount = 0;
+  let name = '';
+  while (data[fv + nameCount] != 0) {
+    name += String.fromCharCode(data[fv + nameCount]);
+    nameCount++;
+  }
+  return name;
+};
