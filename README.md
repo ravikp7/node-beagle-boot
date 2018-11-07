@@ -88,6 +88,7 @@ Now SPL binary is `spl/u-boot-spl.bin` and uboot binary is `u-boot.img`
 
 ___
 ## API Documentation
+___
 #### For USB Mass Storage
 ### require('beagle-boot').usbMassStorage() => `EventEmitter`
 The returned EventEmitter instance emits following events:
