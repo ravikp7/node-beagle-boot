@@ -92,7 +92,7 @@ const runServer = (serverConfig) => {
 const onOpen = (serverConfig) => {
 
   // Initialize RNDIS device on Windows and OSX
-  if (platform != 'linux' && serverConfig.foundDevice === constants.ROM) {
+  if (platform != 'linux' && (serverConfig.foundDevice === constants.ROM||serverConfig.foundDevice === constants.SPL)) {
     rndisInit(serverConfig, emitterMod);
   }
   usbUtils.claimInterface(serverConfig, emitterMod); // Claim USB interfaces
