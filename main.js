@@ -158,6 +158,7 @@ emitter.on('inTransfer', (serverConfig) => {
             emitter.emit('outTransfer', serverConfig, processTFTP_Data(serverConfig), request);
           } else {
             updateProgress(`${serverConfig.foundDevice} TFTP transfer complete`);
+            if (serverConfig.foundDevice === constants.ROM) serverConfig.device.close();
             serverConfig.inEndpoint.stopPoll();
           }
           break;
