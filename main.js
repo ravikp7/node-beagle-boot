@@ -158,7 +158,7 @@ emitter.on('inTransfer', (serverConfig) => {
             emitter.emit('outTransfer', serverConfig, processTFTP_Data(serverConfig), request);
           } else {
             updateProgress(`${serverConfig.foundDevice} TFTP transfer complete`);
-            if (platform != 'linux' && serverConfig.foundDevice === constants.SPL) {
+            if (platform != 'linux') {
               serverConfig.iEndpoint.stopPoll();
             }
             serverConfig.inEndpoint.stopPoll();
