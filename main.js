@@ -93,7 +93,7 @@ const onOpen = (serverConfig) => {
 
   // Initialize RNDIS device on Windows and OSX
   if (platform != 'linux' && (serverConfig.foundDevice === constants.ROM || serverConfig.foundDevice === constants.SPL)) {
-    rndisInit(serverConfig, emitterMod);
+    serverConfig.iEndpoint = rndisInit(serverConfig, emitterMod);
   }
   usbUtils.claimInterface(serverConfig, emitterMod); // Claim USB interfaces
   updateProgress('Interface claimed');
@@ -158,7 +158,9 @@ emitter.on('inTransfer', (serverConfig) => {
             emitter.emit('outTransfer', serverConfig, processTFTP_Data(serverConfig), request);
           } else {
             updateProgress(`${serverConfig.foundDevice} TFTP transfer complete`);
-            if (serverConfig.foundDevice === constants.ROM) serverConfig.device.close();
+            if (platform != 'linux' && serverConfig.foundDevice === constants.SPL) {
+              serverConfig.iEndpoint.stopPoll();
+            }
             serverConfig.inEndpoint.stopPoll();
           }
           break;
