@@ -17,6 +17,8 @@ const usbUtils = require('./lib/usb-utils');
 const server = require('./lib/server');
 const serial = require('./lib/usb_serial');
 
+const winusbDriverGenerator = require('winusb-driver-generator');
+
 const proxyConfig = {
   Host: {},
   BB: {},
@@ -57,8 +59,31 @@ exports.proxyServer = () => {
 // Configuring Server to serve Client
 exports.serveClient = (serverConfigs) => {
   let foundDevice;
+  let winUSBInstallerFlag = true;
+  
+  if (platform === 'win32') {
+    emitter.on('installWinUSB', () => {
+      if (winUSBInstallerFlag) {
+        for (const device of winusbDriverGenerator.listDriverlessDevices()) {
+          if (device.vid === constants.ROM_VID && device.pid === constants.ROM_PID) {
+            console.log('Installing WinUSB Driver for ROM Device');
+            winUSBInstallerFlag = false;
+            return winusbDriverGenerator.associate(device.vid, device.pid, 'BBB ROM DEVICE');
+          }
+          if (device.vid === constants.SPL_VID && device.pid === constants.SPL_PID) {
+            console.log('Installing WinUSB Driver for SPL Device');
+            winUSBInstallerFlag = false;
+            return winusbDriverGenerator.associate(device.vid, device.pid, 'BBB SPL DEVICE');
+          }
+        }
+      }
+    });
+    setInterval(() => { emitter.emit('installWinUSB'); }, 5000)
+  }
+
   progress.increment = (100 / (serverConfigs.length * 10));
   usb.on('attach', (device) => {
+    if(platform==='win32') winUSBInstallerFlag=true;
     foundDevice = server.setup(device, serverConfigs, emitterMod, runServer);
   });
 
