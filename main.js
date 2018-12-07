@@ -60,7 +60,7 @@ exports.proxyServer = () => {
 exports.serveClient = (serverConfigs) => {
   let foundDevice;
   let winUSBInstallerFlag = true;
-  
+
   if (platform === 'win32') {
     emitter.on('installWinUSB', () => {
       if (winUSBInstallerFlag) {
@@ -78,12 +78,16 @@ exports.serveClient = (serverConfigs) => {
         }
       }
     });
-    setInterval(() => { emitter.emit('installWinUSB'); }, 5000)
+    setInterval(() => { emitter.emit('installWinUSB'); }, 5000);
+
+    emitter.on('forceInstallWinUSB', (vid, pid, name) => {
+      return winusbDriverGenerator.associate(vid, pid, `BBB ${name} DEVICE`);
+    });
   }
 
   progress.increment = (100 / (serverConfigs.length * 10));
   usb.on('attach', (device) => {
-    if(platform==='win32') winUSBInstallerFlag=true;
+    if (platform === 'win32') winUSBInstallerFlag = true;
     foundDevice = server.setup(device, serverConfigs, emitterMod, runServer);
   });
 
@@ -109,6 +113,14 @@ const runServer = (serverConfig) => {
     serverConfig.device.open();
     onOpen(serverConfig);
   } catch (ex) {
+    if (platform === 'win32' && ex.toString() === 'Error: LIBUSB_ERROR_NOT_SUPPORTED') {
+      if (serverConfig.foundDevice === constants.ROM) {
+        emitter.emit('forceInstallWinUSB', constants.ROM_VID, constants.ROM_PID, serverConfig.foundDevice);
+      }
+      if (serverConfig.foundDevice === constants.SPL) {
+        emitter.emit('forceInstallWinUSB', constants.SPL_VID, constants.SPL_PID, serverConfig.foundDevice);
+      }
+    }
     emitterMod.emit('error', `Can't open device ${ex}`);
   }
 };
