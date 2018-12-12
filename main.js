@@ -17,6 +17,8 @@ const usbUtils = require('./lib/usb-utils');
 const server = require('./lib/server');
 const serial = require('./lib/usb_serial');
 
+const winusbDriverGenerator = require('winusb-driver-generator');
+
 const proxyConfig = {
   Host: {},
   BB: {},
@@ -57,8 +59,35 @@ exports.proxyServer = () => {
 // Configuring Server to serve Client
 exports.serveClient = (serverConfigs) => {
   let foundDevice;
+  let winUSBInstallerFlag = true;
+
+  if (platform === 'win32') {
+    emitter.on('installWinUSB', () => {
+      if (winUSBInstallerFlag) {
+        for (const device of winusbDriverGenerator.listDriverlessDevices()) {
+          if (device.vid === constants.ROM_VID && device.pid === constants.ROM_PID) {
+            console.log('Installing WinUSB Driver for ROM Device');
+            winUSBInstallerFlag = false;
+            return winusbDriverGenerator.associate(device.vid, device.pid, 'BBB ROM Device');
+          }
+          if (device.vid === constants.SPL_VID && device.pid === constants.SPL_PID) {
+            console.log('Installing WinUSB Driver for SPL Device');
+            winUSBInstallerFlag = false;
+            return winusbDriverGenerator.associate(device.vid, device.pid, 'BBB SPL Device');
+          }
+        }
+      }
+    });
+    setInterval(() => { emitter.emit('installWinUSB'); }, 5000);
+    emitter.on('forceInstallWinUSB', (vid, pid, name) => {
+      console.log(`Force Installing WinUSB Driver for ${name} Device`);
+      return winusbDriverGenerator.update(vid, pid, `BBB ${name} Device`);
+    });
+  }
+
   progress.increment = (100 / (serverConfigs.length * 10));
   usb.on('attach', (device) => {
+    if (platform === 'win32') winUSBInstallerFlag = true;
     foundDevice = server.setup(device, serverConfigs, emitterMod, runServer);
   });
 
@@ -84,6 +113,14 @@ const runServer = (serverConfig) => {
     serverConfig.device.open();
     onOpen(serverConfig);
   } catch (ex) {
+    if (platform === 'win32' && ex.toString() === 'Error: LIBUSB_ERROR_NOT_SUPPORTED') {
+      if (serverConfig.foundDevice === constants.ROM) {
+        emitter.emit('forceInstallWinUSB', constants.ROM_VID, constants.ROM_PID, serverConfig.foundDevice);
+      }
+      if (serverConfig.foundDevice === constants.SPL) {
+        emitter.emit('forceInstallWinUSB', constants.SPL_VID, constants.SPL_PID, serverConfig.foundDevice);
+      }
+    }
     emitterMod.emit('error', `Can't open device ${ex}`);
   }
 };
@@ -93,7 +130,7 @@ const onOpen = (serverConfig) => {
 
   // Initialize RNDIS device on Windows and OSX
   if (platform != 'linux' && (serverConfig.foundDevice === constants.ROM || serverConfig.foundDevice === constants.SPL)) {
-    rndisInit(serverConfig, emitterMod);
+    serverConfig.iEndpoint = rndisInit(serverConfig, emitterMod);
   }
   usbUtils.claimInterface(serverConfig, emitterMod); // Claim USB interfaces
   updateProgress('Interface claimed');
@@ -158,7 +195,9 @@ emitter.on('inTransfer', (serverConfig) => {
             emitter.emit('outTransfer', serverConfig, processTFTP_Data(serverConfig), request);
           } else {
             updateProgress(`${serverConfig.foundDevice} TFTP transfer complete`);
-            if (serverConfig.foundDevice === constants.ROM) serverConfig.device.close();
+            if (platform != 'linux') {
+              serverConfig.iEndpoint.stopPoll();
+            }
             serverConfig.inEndpoint.stopPoll();
           }
           break;

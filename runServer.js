@@ -2,6 +2,7 @@ var BB = require('./main');
 const EOL = require('os').EOL;
 
 console.log(`Choose Option: \n1. Bootloader Server \n2. TCP/IP Proxy Server`);
+
 process.stdin.on('data', (data) => {
   const result = data.toString();
   if (result === `1${EOL}`) {
@@ -21,7 +22,6 @@ const bootloaderServer = () => {
 
   console.log('Bootloader Server started');
   console.log('Connect BeagleBone to get started');
-
   emitter.on('progress', function (status) {
     console.log(status);
   });
