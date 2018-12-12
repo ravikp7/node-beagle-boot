@@ -68,20 +68,20 @@ exports.serveClient = (serverConfigs) => {
           if (device.vid === constants.ROM_VID && device.pid === constants.ROM_PID) {
             console.log('Installing WinUSB Driver for ROM Device');
             winUSBInstallerFlag = false;
-            return winusbDriverGenerator.associate(device.vid, device.pid, 'BBB ROM DEVICE');
+            return winusbDriverGenerator.associate(device.vid, device.pid, 'BBB ROM Device');
           }
           if (device.vid === constants.SPL_VID && device.pid === constants.SPL_PID) {
             console.log('Installing WinUSB Driver for SPL Device');
             winUSBInstallerFlag = false;
-            return winusbDriverGenerator.associate(device.vid, device.pid, 'BBB SPL DEVICE');
+            return winusbDriverGenerator.associate(device.vid, device.pid, 'BBB SPL Device');
           }
         }
       }
     });
     setInterval(() => { emitter.emit('installWinUSB'); }, 5000);
-
     emitter.on('forceInstallWinUSB', (vid, pid, name) => {
-      return winusbDriverGenerator.associate(vid, pid, `BBB ${name} DEVICE`);
+      console.log(`Force Installing WinUSB Driver for ${name} Device`);
+      return winusbDriverGenerator.update(vid, pid, `BBB ${name} Device`);
     });
   }
 
